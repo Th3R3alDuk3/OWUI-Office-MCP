@@ -1,0 +1,11 @@
+[project]
+name = "pptx-mcp"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.13"
+dependencies = [
+    "fastmcp>=3.3.1",
+    "httpx>=0.28.1",
+    "pydantic-settings>=2.14.1",
+    "python-pptx>=1.0.2",
+]
