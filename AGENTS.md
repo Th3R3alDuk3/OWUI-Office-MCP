@@ -68,12 +68,15 @@ PPTX-MCP/
 │   └── __init__.py
 ├── services/             # Wiederverwendbare Service-Klassen (später)
 │   └── __init__.py
-└── subservers/           # Mountbare FastMCP-Subserver
+├── services/            # Subserver-übergreifende Service-Funktionen
+│   ├── __init__.py
+│   └── owui.py          # Generischer OpenWebUI File-Upload
+└── subservers/          # Mountbare FastMCP-Subserver
     ├── __init__.py
     └── powerpoint/
         ├── __init__.py
-        ├── server.py     # FastMCP-Instanz + Tools des Subservers
-        └── _utils.py     # Template-Loading + python-pptx Helpers
+        ├── server.py    # FastMCP-Instanz + Tools des Subservers
+        └── _utils.py    # python-pptx Helpers (Templates/Slides)
 ```
 
 ## Modulverantwortlichkeiten
@@ -95,23 +98,22 @@ PPTX-MCP/
 
 ### `subservers/powerpoint/`
 - `server.py`:
-  - Eigene `FastMCP`-Instanz mit Lifespan, der Templates per `analyze_templates` einliest und in das Module-Global `_templates` legt.
+  - Eigene `FastMCP`-Instanz mit Lifespan, der Templates per `analyze_templates` einliest und in das Module-Global `_templates` legt. Lifespan yielded ohne State (Globals reichen).
   - Module-Global `_projects: dict[str, _Project]` — Key ist die User-ID aus dem JWT.
-  - `_user_key()`: liest den aktuellen `AccessToken` via `fastmcp.server.dependencies.get_access_token()` und gibt `claims["id"]` zurück (OpenWebUI-User-UUID). Wirft, wenn keiner da ist.
-  - Tools: `list_templates`, `create_project`, `append_slide`, `remove_slides`, `save_project`. Kein `ctx: Context` Param — User-Identifikation läuft komplett über `_user_key()`.
+  - Konstante `PPTX_MIME` (PPTX-Content-Type), wird beim Upload an `services.owui.upload_file` weitergereicht.
+  - Tools (alle `async`): `list_templates`, `create_project`, `append_slide`, `remove_slides`, `save_project`. Jeder Tool-Body, der den User braucht, ruft `get_access_token()` direkt auf und liest `claims["id"]` + ggf. `token.token` für Downstream-Aufrufe. Keine Helper-Funktionen.
 - `_utils.py`:
   - `analyze_templates`: Templates aus dem Template-Ordner einlesen, Metadaten extrahieren (Pfad, Slide-Count, Layouts als `dict[str, LayoutInfo]` mit Placeholders). Rückgabe `dict[str, TemplateInfo]` (Key: `path.stem`).
   - `drop_slide(pptx, index)`: einzelne Slide aus `sldIdLst` entfernen inkl. `drop_rel` auf die Relation.
   - `drop_all_slides(pptx)`: schleift `drop_slide` bis leer (Masters/Layouts bleiben).
-- `_files.py`:
-  - `upload_to_owui(filename, data, token, base_url)`: lädt Bytes per `httpx.AsyncClient` an `{base_url}/api/v1/files/` hoch (Multipart-Field `file`, `Authorization: Bearer <token>`). Antwort wird in ein `OwuiFile`-Pydantic-Modell (siehe `models/owui.py`) geparst.
 
 ### `models/`
 - Pydantic-Modelle für Tool-Returns (z.B. `TemplateInfo`, `TemplateList`).
 - Klein halten; nur was tatsächlich zurückgegeben wird.
 
 ### `services/`
-- Aktuell leer (nur `__init__.py`). Platzhalter für spätere wiederverwendbare Logik (z.B. Slide-Builder, Export-Service). Nicht vorab füllen.
+- Wiederverwendbare Service-Funktionen, subserver-übergreifend nutzbar.
+- `owui.py`: `upload_file(filename, data, content_type, token, base_url)` — generischer File-Upload an OpenWebUI (`POST {base_url}/api/v1/files/`, Multipart-Field `file`, Bearer-Auth). Antwort wird in `OWUIFile` (siehe `models/owui.py`) geparst. Keine Format-Annahmen — der Content-Type wird vom Aufrufer übergeben.
 
 ## Konventionen
 

@@ -2,7 +2,6 @@ import io
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
-from typing import Any
 
 from fastmcp import FastMCP
 from fastmcp.server.dependencies import get_access_token
@@ -13,11 +12,15 @@ from pydantic import Field
 from config import get_settings
 from models.project import ProjectInfo, SavedProjectInfo, SlideInfo
 from models.template import TemplateInfo
-from subservers.powerpoint._files import upload_to_owui
+from services.owui import upload_file
 from subservers.powerpoint._utils import (
     analyze_templates,
     drop_all_slides,
     drop_slide,
+)
+
+PPTX_MIME = (
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 )
 
 
@@ -31,28 +34,11 @@ _projects: dict[str, _Project] = {}
 _templates: dict[str, TemplateInfo] = {}
 
 
-def _user_key() -> str:
-    token = get_access_token()
-    if token is None:
-        raise ValueError("Authentication required.")
-    user_id = token.claims.get("id")
-    if not user_id:
-        raise ValueError("JWT is missing the 'id' claim.")
-    return str(user_id)
-
-
-def _bearer_token() -> str:
-    token = get_access_token()
-    if token is None:
-        raise ValueError("Authentication required.")
-    return token.token
-
-
 @asynccontextmanager
-async def lifespan(server: FastMCP) -> AsyncIterator[dict[str, Any]]:
+async def lifespan(server: FastMCP) -> AsyncIterator[None]:
     global _templates
     _templates = analyze_templates(get_settings().templates_dir)
-    yield {"templates": _templates}
+    yield
 
 
 mcp = FastMCP(name="powerpoint", lifespan=lifespan)
@@ -76,12 +62,12 @@ async def list_templates() -> dict[str, TemplateInfo]:
 @mcp.tool(
     name="create_project",
     description=(
-        "Create a new in-memory PowerPoint project for the current chat session, "
-        "based on one of the available templates. The template is loaded fresh "
-        "into memory and stored under the active session id, so subsequent tool "
-        "calls in this chat can modify it. Pass the template `name` exactly as "
-        "returned by `list_templates`. If a project already exists for this "
-        "session it is overwritten."
+        "Create a new in-memory PowerPoint project for the calling user, based "
+        "on one of the available templates. The template is loaded fresh into "
+        "memory and stored under the user's id (from the JWT), so subsequent "
+        "tool calls by the same user can modify it. Pass the template `name` "
+        "exactly as returned by `list_templates`. If a project already exists "
+        "for this user it is overwritten."
     ),
 )
 async def create_project(
@@ -96,7 +82,14 @@ async def create_project(
             f" Available: {list(_templates)}"
         )
 
-    user_id = _user_key()
+    token = get_access_token()
+    if token is None:
+        raise ValueError("Authentication required.")
+    user_id = token.claims.get("id")
+    if not user_id:
+        raise ValueError("JWT is missing the 'id' claim.")
+    user_id = str(user_id)
+
     pptx = Presentation(template.path)
     drop_all_slides(pptx)
     _projects[user_id] = _Project(template_name=template_name, pptx=pptx)
@@ -111,13 +104,13 @@ async def create_project(
 @mcp.tool(
     name="append_slide",
     description=(
-        "Append a new slide to the current session's project. The slide is "
-        "created from one of the slide layouts defined in the project's "
-        "template (see `list_templates` for layout names and their "
-        "placeholders). Optionally fill text placeholders by passing a "
-        "mapping from placeholder index (`idx`) to the text value to "
-        "insert; placeholders not in the mapping are left empty. Returns "
-        "the zero-based index of the appended slide within the project."
+        "Append a new slide to the calling user's project. The slide is created "
+        "from one of the slide layouts defined in the project's template (see "
+        "`list_templates` for layout names and their placeholders). Optionally "
+        "fill text placeholders by passing a mapping from placeholder index "
+        "(`idx`) to the text value to insert; placeholders not in the mapping "
+        "are left empty. Returns the zero-based index of the appended slide "
+        "within the project."
     ),
 )
 async def append_slide(
@@ -131,8 +124,14 @@ async def append_slide(
         ),
     ),
 ) -> SlideInfo:
+    token = get_access_token()
+    if token is None:
+        raise ValueError("Authentication required.")
+    user_id = token.claims.get("id")
+    if not user_id:
+        raise ValueError("JWT is missing the 'id' claim.")
 
-    project = _projects.get(_user_key())
+    project = _projects.get(str(user_id))
     if project is None:
         raise ValueError(
             "No project for this user."
@@ -162,11 +161,11 @@ async def append_slide(
 @mcp.tool(
     name="remove_slides",
     description=(
-        "Remove one or more slides from the current session's project by "
-        "their zero-based indices. Indices refer to the slide positions "
-        "before removal; the call validates all indices first, then "
-        "removes them in descending order so earlier indices stay stable. "
-        "Returns the updated project info with the new slide count."
+        "Remove one or more slides from the calling user's project by their "
+        "zero-based indices. Indices refer to the slide positions before "
+        "removal; the call validates all indices first, then removes them in "
+        "descending order so earlier indices stay stable. Returns the updated "
+        "project info with the new slide count."
     ),
 )
 async def remove_slides(
@@ -176,8 +175,14 @@ async def remove_slides(
         ),
     ),
 ) -> ProjectInfo:
+    token = get_access_token()
+    if token is None:
+        raise ValueError("Authentication required.")
+    user_id = token.claims.get("id")
+    if not user_id:
+        raise ValueError("JWT is missing the 'id' claim.")
+    user_id = str(user_id)
 
-    user_id = _user_key()
     project = _projects.get(user_id)
     if project is None:
         raise ValueError(
@@ -206,13 +211,13 @@ async def remove_slides(
 @mcp.tool(
     name="save_project",
     description=(
-        "Serialize the current user's project to a `.pptx` byte stream and "
+        "Serialize the calling user's project to a `.pptx` byte stream and "
         "upload it to OpenWebUI using the caller's JWT. Pass `filename` "
         "without extension (`.pptx` is appended automatically); if omitted, "
         "the template name is used. The project stays active after saving, "
         "so further `append_slide` calls and re-saving are possible. Returns "
-        "the chosen filename, the slide count, and the OpenWebUI file id of "
-        "the uploaded file."
+        "the chosen filename, the slide count, the OpenWebUI file id, and a "
+        "download URL."
     ),
 )
 async def save_project(
@@ -224,7 +229,14 @@ async def save_project(
         ),
     ),
 ) -> SavedProjectInfo:
-    project = _projects.get(_user_key())
+    token = get_access_token()
+    if token is None:
+        raise ValueError("Authentication required.")
+    user_id = token.claims.get("id")
+    if not user_id:
+        raise ValueError("JWT is missing the 'id' claim.")
+
+    project = _projects.get(str(user_id))
     if project is None:
         raise ValueError(
             "No project for this user."
@@ -238,17 +250,17 @@ async def save_project(
     project.pptx.save(buf)
 
     base_url = get_settings().owui_base_url
-    uploaded = await upload_to_owui(
+    uploaded = await upload_file(
         filename=out_name,
         data=buf.getvalue(),
-        token=_bearer_token(),
+        content_type=PPTX_MIME,
+        token=token.token,
         base_url=base_url,
     )
 
-    file_id = uploaded.id
     return SavedProjectInfo(
         filename=out_name,
         slide_count=len(project.pptx.slides),
-        owui_file_id=file_id,
-        owui_url=f"{base_url.rstrip('/')}/api/v1/files/{file_id}/content",
+        owui_file_id=uploaded.id,
+        owui_url=f"{base_url.rstrip('/')}/api/v1/files/{uploaded.id}/content",
     )
