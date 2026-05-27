@@ -6,7 +6,7 @@ from pptx.opc.constants import RELATIONSHIP_TYPE
 from pptx.oxml import parse_xml
 from pptx.presentation import Presentation as PresentationType
 
-from models.template import LayoutInfo, PlaceholderInfo
+from models.pptx import LayoutInfo, PlaceholderInfo
 
 
 logger = get_logger(__name__)

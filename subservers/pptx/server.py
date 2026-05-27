@@ -11,10 +11,9 @@ from pptx import Presentation
 from pydantic import Field
 
 from config import get_settings
-from models.project import DownloadProjectResponse, Project
-from models.template import LayoutInfo
+from models.pptx import DownloadProjectResponse, LayoutInfo, Project
 from services.owui import upload_file
-from subservers.powerpoint._utils import (
+from subservers.pptx._utils import (
     drop_all_slides,
     drop_slide,
     list_layout_infos,
@@ -267,6 +266,6 @@ async def download_project(
 
     return DownloadProjectResponse(
         filename=out_name,
-        slide_count=slide_count,
+        item_count=item_count,
         owui_url=f"{base_url}/api/v1/files/{uploaded.id}/content",
     )

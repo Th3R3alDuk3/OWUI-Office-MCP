@@ -11,7 +11,7 @@
 | Format | Status |
 |---|---|
 | 🎬 PowerPoint `.pptx` | ✅ |
-| 📄 Word `.docx` | 🚧 |
+| 📄 Word `.docx` | ✅ |
 | 📊 Excel `.xlsx` | 🚧 |
 
 ## 🚀 Setup
@@ -35,11 +35,15 @@ uv run python main.py
 
 Läuft als `streamable-http` auf `HOST:PORT` aus der `.env`.
 
-## 🛠️ Tools (PowerPoint)
+## 🛠️ Tools
+
+Jeder Subserver ist unter seiner Dateiendung als Namespace gemounted (`pptx.*`, `docx.*`). Per-User State pro Subserver (JWT-Claim `id`), Sliding-TTL, Auto-Sweep — keine Disk-Writes.
+
+### 🎬 `pptx`
 
 | Tool | |
 |---|---|
-| 📋 `list_templates` | verfügbare Templates |
+| 📋 `list_templates` | verfügbare `.pptx` Templates |
 | 🎨 `list_masters` | Slide Masters eines Templates |
 | 📐 `list_layouts` | Layouts + Placeholders eines Masters |
 | 📁 `create_project` | leeres Projekt aus einem Template |
@@ -48,7 +52,18 @@ Läuft als `streamable-http` auf `HOST:PORT` aus der `.env`.
 | 🗑️ `remove_slides` | Folien per Index entfernen |
 | 💾 `download_project` | Projekt zu OpenWebUI hochladen |
 
-Per-User State (JWT-Claim `id`), Sliding-TTL, Auto-Sweep — keine Disk-Writes.
+### 📄 `docx`
+
+| Tool | |
+|---|---|
+| 📋 `list_templates` | verfügbare `.docx` Templates |
+| 🎨 `list_styles` | Paragraph- und Table-Styles eines Templates |
+| 📁 `create_project` | leeres Projekt aus einem Template |
+| ➕ `append_paragraph` | Paragraph anhängen (Heading via Style-Name) |
+| 📊 `append_table` | Tabelle anhängen (optional mit Zelldaten) |
+| ✏️ `edit_paragraph` | Paragraph-Text per Index ersetzen |
+| 🗑️ `remove_blocks` | Body-Blöcke (Paragraph & Table) per Index entfernen |
+| 💾 `download_project` | Projekt zu OpenWebUI hochladen |
 
 ## 📚 Mehr
 

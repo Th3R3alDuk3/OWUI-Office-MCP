@@ -2,7 +2,7 @@
 
 ## Projekt
 
-Neuimplementierung eines Office MCP Servers für OpenWebUI (Referenz / Anti-Vorbild: https://github.com/GongRzhe/Office-PowerPoint-MCP-Server). Erstes unterstütztes Format: PowerPoint (`.pptx`). Word (`.docx`) und Excel (`.xlsx`) folgen — jeweils als eigener Subserver unter `subservers/` (analog zu `subservers/powerpoint/`), gemounted in `main.py` mit eigenem Namespace.
+Neuimplementierung eines Office MCP Servers für OpenWebUI (Referenz / Anti-Vorbild: https://github.com/GongRzhe/Office-PowerPoint-MCP-Server). Unterstützte Formate: PowerPoint (`.pptx`) und Word (`.docx`). Excel (`.xlsx`) folgt — jeder Office-Typ ist ein eigener Subserver unter `subservers/<endung>/`, gemounted in `main.py` mit Dateiendung als Namespace.
 
 Ziel: sauber, minimal, erweiterbar. **KISS** ist Pflicht — keine Abstraktionen auf Vorrat, keine Features die nicht im Scope stehen, keine Fallbacks für Szenarien die nicht eintreten können.
 
@@ -45,8 +45,10 @@ Ziel: sauber, minimal, erweiterbar. **KISS** ist Pflicht — keine Abstraktionen
 
 1. FastMCP Server startet via `main.py` (`streamable-http`, JWT-Auth).
 2. Konfiguration kommt aus `.env` (via `config.py`).
-3. Templates aus `TEMPLATES_DIR` werden **lazy** pro Tool-Call mit `python-pptx` eingelesen — kein Preload, kein Cache.
-4. Pro User (JWT-Claim `id`) wird ein In-Memory-Projekt gehalten; Tools mutieren dieses Projekt:
+3. Templates aus `TEMPLATES_DIR` werden **lazy** pro Tool-Call mit `python-pptx` bzw. `python-docx` eingelesen — kein Preload, kein Cache. Beide Subserver teilen sich `TEMPLATES_DIR` und filtern nach Dateiendung.
+4. Pro User (JWT-Claim `id`) und Subserver wird ein eigenes In-Memory-Projekt gehalten; Tools mutieren das jeweilige Projekt.
+
+   **`pptx`** (Namespace `pptx`):
    - `list_templates` — verfügbare `.pptx` Dateien im Template-Ordner listen.
    - `list_masters` — Slide Masters eines Templates listen (`dict[int, str]`, Key ist der Index).
    - `list_layouts` — Layouts eines Masters mit Placeholder-Infos (`idx`, `name`, `type`).
@@ -55,6 +57,16 @@ Ziel: sauber, minimal, erweiterbar. **KISS** ist Pflicht — keine Abstraktionen
    - `edit_slide` — nur die Placeholder-Inhalte einer bestehenden Folie (per Index) aktualisieren; nicht aufgeführte Placeholder bleiben unverändert.
    - `remove_slides` — Folien per Indexliste löschen.
    - `download_project` — Projekt im Speicher serialisieren und per User-JWT an OpenWebUI (`POST {OWUI_BASE_URL}/api/v1/files/`) hochladen. Kein lokaler Disk-Write. Antwort enthält `owui_url`.
+
+   **`docx`** (Namespace `docx`):
+   - `list_templates` — verfügbare `.docx` Dateien im Template-Ordner listen.
+   - `list_styles` — Paragraph- und Table-Styles eines Templates als `dict[str, StyleInfo]` (type, builtin). Andere Style-Typen werden gefiltert.
+   - `create_project` — leeres Projekt aus einem Template anlegen (Body geleert, `<w:sectPr>` bleibt erhalten).
+   - `append_paragraph` — Paragraph mit optionalem Style anhängen (Headings via Style-Name, z.B. `Heading 1`).
+   - `append_table` — Tabelle (`rows` × `cols`) mit optionalem Style und optionalen Zelldaten anhängen.
+   - `edit_paragraph` — Text eines Paragraphen per Index ersetzen (Tabellen werden in diesem Index nicht mitgezählt).
+   - `remove_blocks` — Body-Blöcke (Paragraphs **und** Tables, gemeinsamer Index) per Indexliste löschen.
+   - `download_project` — analog zu pptx; Antwort enthält `block_count` + `owui_url`.
 
 State-Lifecycle: `_projects` ist eine `cachetools.TTLCache` (Sliding-TTL via Re-Insert nach jedem Tool-Call, harter `maxsize=10_000`-Cap gegen unbegrenztes Wachstum). Lazy Eviction beim Zugriff plus aktiver Background-Sweep via `_sweep_projects` → `cache.expire()`. TTL und Sweep-Intervall kommen aus `.env` (`PROJECT_TTL_SECONDS`, `PROJECT_SWEEP_INTERVAL_SECONDS`, Defaults 3600 / 300).
 
@@ -71,27 +83,32 @@ OWUI-Office-MCP/
 ├── AGENTS.md
 ├── main.py               # FastMCP Entry, mountet Subserver
 ├── config.py             # Lädt .env, stellt Settings-Objekt bereit
-├── models/               # Pydantic-Modelle für Tool-Returns
+├── models/               # Pydantic-Modelle pro Subserver (+ shared)
 │   ├── __init__.py
-│   ├── owui.py           # OpenWebUI Upload-Response
-│   ├── project.py        # Project, DownloadProjectResponse
-│   └── template.py       # LayoutInfo, PlaceholderInfo
+│   ├── owui.py           # OpenWebUI Upload-Response (shared)
+│   ├── pptx.py           # Project, DownloadProjectResponse, LayoutInfo, PlaceholderInfo
+│   └── docx.py           # Project, DownloadProjectResponse, StyleInfo
 ├── services/             # Subserver-übergreifende Service-Funktionen
 │   ├── __init__.py
 │   └── owui.py           # Generischer OpenWebUI File-Upload
-└── subservers/           # Mountbare FastMCP-Subserver
+└── subservers/           # Mountbare FastMCP-Subserver (Namespace = Dateiendung)
     ├── __init__.py
-    └── powerpoint/
+    ├── pptx/
+    │   ├── __init__.py
+    │   ├── server.py     # FastMCP-Instanz + Tools des Subservers
+    │   └── _utils.py     # python-pptx Helpers (Templates/Slides)
+    └── docx/
         ├── __init__.py
         ├── server.py     # FastMCP-Instanz + Tools des Subservers
-        └── _utils.py     # python-pptx Helpers (Templates/Slides)
+        └── _utils.py     # python-docx Helpers (Templates/Blocks)
 ```
 
 ## Modulverantwortlichkeiten
 
 ### `main.py`
 - Erstellt die Haupt-`FastMCP`-Instanz.
-- Mountet die Subserver aus `subservers/` (aktuell nur `powerpoint`).
+- Mountet die Subserver aus `subservers/` (`pptx`, `docx`) jeweils unter ihrem Dateiendungs-Namespace.
+- Kombiniert die Subserver-Lifespans via `combine_lifespans`.
 - Startet den Server (`mcp.run()` o.ä.).
 - Keine Business-Logik.
 
@@ -106,7 +123,7 @@ OWUI-Office-MCP/
   - `PROJECT_SWEEP_INTERVAL_SECONDS: int` (default 300) — Intervall für den aktiven Sweep, der abgelaufene Einträge aus dem Cache räumt.
 - Settings sind via `@lru_cache` ein Singleton (`get_settings()`).
 
-### `subservers/powerpoint/`
+### `subservers/pptx/`
 - `server.py`:
   - Eigene `FastMCP`-Instanz mit Lifespan, der ausschließlich den TTL-Sweep-Task (`_ttl_task`) verwaltet. Kein Template-Preload — Templates werden lazy pro Tool-Call eingelesen.
   - Module-Global `_projects: TTLCache[str, Project]` — Key ist die User-ID aus dem JWT.
@@ -119,6 +136,17 @@ OWUI-Office-MCP/
   - `list_layout_infos(templates_dir, template_name, master_index)`: Layouts eines Masters als `dict[str, LayoutInfo]` inkl. Placeholders (`idx`, `name`, `type`).
   - `drop_slide(presentation, index)`: einzelne Slide aus `sldIdLst` entfernen inkl. `drop_rel` auf die Relation.
   - `drop_all_slides(presentation)`: schleift `drop_slide` bis leer (Masters/Layouts bleiben).
+
+### `subservers/docx/`
+- `server.py`:
+  - Aufbau identisch zu `pptx/server.py`: eigene `FastMCP`-Instanz, eigener `_projects: TTLCache[str, Project]`, eigener Lifespan-TTL-Sweep, eigener `_get_project`-Helper.
+  - Konstante `DOCX_MIME` (Word-Content-Type) für den OWUI-Upload.
+  - Tools (alle `async`): `list_templates`, `list_styles`, `create_project`, `append_paragraph`, `append_table`, `edit_paragraph`, `remove_blocks`, `download_project`. DI-Konvention wie beim pptx-Subserver. `append_paragraph` akzeptiert optional einen Paragraph-Style (Headings über z.B. `Heading 1`) — kein separater Heading-Endpoint. `remove_blocks` arbeitet auf einer einheitlichen Block-Liste (Paragraphs **und** Tables, ohne `<w:sectPr>`) → Indizes über beide Block-Typen hinweg.
+- `_utils.py`:
+  - `list_template_names(templates_dir)`: `.docx` Dateien im Template-Ordner listen (defekte überspringen + warn).
+  - `list_style_infos(templates_dir, template_name)`: Paragraph- und Table-Styles als `dict[str, StyleInfo]`. Andere Style-Typen (Character/List) werden gefiltert — sind für die aktuellen Tools nicht relevant.
+  - `count_blocks(document)`: Anzahl Body-Blöcke (ohne `<w:sectPr>`).
+  - `drop_block(document, index)` / `drop_all_blocks(document)`: einzelne bzw. alle Body-Kinder entfernen, `<w:sectPr>` bleibt erhalten (Word braucht das Section-Properties-Element für ein valides Dokument).
 
 ### `models/`
 - Pydantic-Modelle für Tool-Returns (z.B. `TemplateInfo`, `TemplateList`).

@@ -1,17 +1,22 @@
 from asyncio import Lock
 from dataclasses import dataclass, field
 
-from pptx.presentation import Presentation as PresentationType
+from docx.document import Document as DocumentType
 from pydantic import BaseModel
 
 
 @dataclass
 class Project:
-    presentation: PresentationType
+    document: DocumentType
     lock: Lock = field(default_factory=Lock)
 
 
 class DownloadProjectResponse(BaseModel):
     filename: str
-    slide_count: int
+    block_count: int
     owui_url: str
+
+
+class StyleInfo(BaseModel):
+    type: str
+    builtin: bool
