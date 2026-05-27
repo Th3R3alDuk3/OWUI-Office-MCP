@@ -54,7 +54,7 @@ async def lifespan(server: FastMCP) -> AsyncIterator[None]:
 
     task = create_task(
         _ttl_task(_settings.project_sweep_interval_seconds))
-    
+
     try:
         yield
     finally:
@@ -237,6 +237,7 @@ async def remove_slides(
 )
 async def download_project(
     file_name: str = Field(
+        min_length=3, max_length=30,
         description="Stem without `.pptx`.",
     ),
     user_id: str = TokenClaim("id"),

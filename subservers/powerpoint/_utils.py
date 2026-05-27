@@ -81,7 +81,7 @@ def list_layout_infos(
                     type=str(placeholder.placeholder_format.type),
                 )
             )
-        
+
         layout_infos[layout.name] = LayoutInfo(placeholders=placeholders)
 
     return layout_infos

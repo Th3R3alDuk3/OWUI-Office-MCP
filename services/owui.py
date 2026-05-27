@@ -8,9 +8,9 @@ async def upload_file(
     data: bytes,
     content_type: str,
     token: str,
-    base_url: str
+    base_url: str,
 ) -> OWUIFile:
-        
+
     try:
 
         async with AsyncClient(verify=False) as client:
