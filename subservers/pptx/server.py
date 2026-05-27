@@ -266,6 +266,6 @@ async def download_project(
 
     return DownloadProjectResponse(
         filename=out_name,
-        item_count=item_count,
+        slide_count=slide_count,
         owui_url=f"{base_url}/api/v1/files/{uploaded.id}/content",
     )
