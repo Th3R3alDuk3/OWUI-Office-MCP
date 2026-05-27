@@ -1,19 +1,17 @@
+from asyncio import Lock
+from dataclasses import dataclass, field
+
+from pptx import Presentation
 from pydantic import BaseModel
 
 
-class ProjectInfo(BaseModel):
-    user_id: str
-    template_name: str
-    slide_count: int
+@dataclass
+class Project:
+    presentation: Presentation
+    lock: Lock = field(default_factory=Lock)
 
 
-class SlideInfo(BaseModel):
-    index: int
-    layout_name: str
-
-
-class SavedProjectInfo(BaseModel):
+class DownloadProjectResponse(BaseModel):
     filename: str
     slide_count: int
-    owui_file_id: str
     owui_url: str

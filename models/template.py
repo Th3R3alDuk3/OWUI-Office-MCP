@@ -10,8 +10,3 @@ class PlaceholderInfo(BaseModel):
 class LayoutInfo(BaseModel):
     placeholders: list[PlaceholderInfo]
 
-
-class TemplateInfo(BaseModel):
-    path: str
-    slide_count: int
-    layouts: dict[str, LayoutInfo]

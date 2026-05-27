@@ -1,48 +1,55 @@
-# pptx-mcp
+# 🧰 OWUI-Office-MCP
 
-Minimaler MCP-Server für PowerPoint-Templates. FastMCP + python-pptx. Frontend: OpenWebUI.
+> Office-Dokumente via MCP für OpenWebUI. Schlank, modern, erweiterbar.
 
-## Setup
+⚡ FastMCP &nbsp;·&nbsp; 📦 uv &nbsp;·&nbsp; 🔐 JWT (HS256) &nbsp;·&nbsp; 🌐 streamable-http
+
+---
+
+## 🎯 Status
+
+| Format | Status |
+|---|---|
+| 🎬 PowerPoint `.pptx` | ✅ |
+| 📄 Word `.docx` | 🚧 |
+| 📊 Excel `.xlsx` | 🚧 |
+
+## 🚀 Setup
 
 ```bash
 uv sync
 cp .env.example .env
-# JWT_SECRET = OpenWebUIs WEBUI_SECRET_KEY
-# OWUI_BASE_URL = z.B. http://localhost:3000 (vom MCP-Server aus erreichbar)
 ```
 
-`.pptx` Templates in [templates/](templates/) ablegen.
+In der `.env`:
+- 🔑 `JWT_SECRET` → OpenWebUIs `WEBUI_SECRET_KEY`
+- 🌐 `OWUI_BASE_URL` → z.B. `http://localhost:3000` (vom MCP-Server aus erreichbar)
 
-## Run
+Templates in 📁 [templates/](templates/) ablegen.
+
+## ▶️ Run
 
 ```bash
 uv run python main.py
 ```
 
-Läuft als `streamable-http` auf `HOST:PORT` aus `.env`. JWT-Auth über OpenWebUI's Shared Secret (HS256).
+Läuft als `streamable-http` auf `HOST:PORT` aus der `.env`.
 
-## Tools
+## 🛠️ Tools (PowerPoint)
 
-| Tool | Beschreibung |
+| Tool | |
 |---|---|
-| `powerpoint_list_templates` | Listet beim Start analysierte Templates (Name, Pfad, Slide-Count, Layouts + Placeholders) |
-| `powerpoint_create_project` | Legt ein leeres In-Memory-Projekt für den User an (Slides aus dem Template werden entfernt, Masters/Layouts bleiben) |
-| `powerpoint_append_slide` | Hängt eine Folie aus einem Layout an; optional Placeholder per `idx` füllen |
-| `powerpoint_edit_slide` | Ändert nur die Placeholder-Inhalte einer bestehenden Folie (Index + Mapping `idx` → Text); andere Placeholder bleiben unangetastet |
-| `powerpoint_remove_slides` | Entfernt Folien per 0-basiertem Index (Liste, Duplikate ignoriert) |
-| `powerpoint_save_project` | Serialisiert das Projekt im Speicher und lädt es per User-JWT zu OpenWebUI hoch (`/api/v1/files/`) — kein Disk-Write |
+| 📋 `list_templates` | verfügbare Templates |
+| 🎨 `list_masters` | Slide Masters eines Templates |
+| 📐 `list_layouts` | Layouts + Placeholders eines Masters |
+| 📁 `create_project` | leeres Projekt aus einem Template |
+| ➕ `append_slide` | Folie aus einem Layout anhängen |
+| ✏️ `edit_slide` | Placeholder einer Folie ändern |
+| 🗑️ `remove_slides` | Folien per Index entfernen |
+| 💾 `download_project` | Projekt zu OpenWebUI hochladen |
 
-Projekt-State wird pro User gehalten — Key kommt aus dem JWT-Claim `id` (OpenWebUI User-UUID). State überlebt damit einzelne Requests innerhalb derselben User-Session.
+Per-User State (JWT-Claim `id`), Sliding-TTL, Auto-Sweep — keine Disk-Writes.
 
-## Struktur
+## 📚 Mehr
 
-```
-main.py              FastMCP entry, Auth, mountet Subserver
-config.py            .env via pydantic-settings
-models/              Pydantic-Returns
-services/            (placeholder)
-subservers/
-  powerpoint/        Lifespan-Loading + Tools (list/create/append/remove/save)
-```
-
-Details: siehe [AGENTS.md](AGENTS.md).
+Architektur & Konventionen → 👉 [AGENTS.md](AGENTS.md)

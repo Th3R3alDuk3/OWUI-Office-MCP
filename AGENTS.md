@@ -2,7 +2,7 @@
 
 ## Projekt
 
-Neuimplementierung eines PowerPoint MCP Servers (Referenz / Anti-Vorbild: https://github.com/GongRzhe/Office-PowerPoint-MCP-Server).
+Neuimplementierung eines Office MCP Servers für OpenWebUI (Referenz / Anti-Vorbild: https://github.com/GongRzhe/Office-PowerPoint-MCP-Server). Erstes unterstütztes Format: PowerPoint (`.pptx`). Word (`.docx`) und Excel (`.xlsx`) folgen — jeweils als eigener Subserver unter `subservers/` (analog zu `subservers/powerpoint/`), gemounted in `main.py` mit eigenem Namespace.
 
 Ziel: sauber, minimal, erweiterbar. **KISS** ist Pflicht — keine Abstraktionen auf Vorrat, keine Features die nicht im Scope stehen, keine Fallbacks für Szenarien die nicht eintreten können.
 
@@ -11,7 +11,7 @@ Ziel: sauber, minimal, erweiterbar. **KISS** ist Pflicht — keine Abstraktionen
 - **FastMCP** als MCP-Framework (Server, Mounting, Tools).
 - **python-pptx** für die Analyse / Verarbeitung von `.pptx` Dateien.
 - **pydantic-settings** zum Lesen der `.env` (kein selbstgebautes Config-Parsing).
-- Python 3.11+.
+- Python 3.12+.
 
 ## Werkzeuge & Philosophie
 
@@ -45,41 +45,46 @@ Ziel: sauber, minimal, erweiterbar. **KISS** ist Pflicht — keine Abstraktionen
 
 1. FastMCP Server startet via `main.py` (`streamable-http`, JWT-Auth).
 2. Konfiguration kommt aus `.env` (via `config.py`).
-3. Beim Start lädt der **powerpoint** Subserver alle Templates aus `TEMPLATES_DIR` und analysiert sie mit `python-pptx`.
+3. Templates aus `TEMPLATES_DIR` werden **lazy** pro Tool-Call mit `python-pptx` eingelesen — kein Preload, kein Cache.
 4. Pro User (JWT-Claim `id`) wird ein In-Memory-Projekt gehalten; Tools mutieren dieses Projekt:
-   - `list_templates` — beim Start analysierte Templates zurückgeben.
+   - `list_templates` — verfügbare `.pptx` Dateien im Template-Ordner listen.
+   - `list_masters` — Slide Masters eines Templates listen (`dict[int, str]`, Key ist der Index).
+   - `list_layouts` — Layouts eines Masters mit Placeholder-Infos (`idx`, `name`, `type`).
    - `create_project` — leeres Projekt aus einem Template anlegen (überschreibt existierendes).
    - `append_slide` — Folie aus einem Layout anhängen, Placeholder per `idx` füllen.
    - `edit_slide` — nur die Placeholder-Inhalte einer bestehenden Folie (per Index) aktualisieren; nicht aufgeführte Placeholder bleiben unverändert.
    - `remove_slides` — Folien per Indexliste löschen.
-   - `save_project` — Projekt im Speicher serialisieren und per User-JWT an OpenWebUI (`POST {OPENWEBUI_BASE_URL}/api/v1/files/`) hochladen. Kein lokaler Disk-Write. Antwort enthält `openwebui_file_id`.
+   - `download_project` — Projekt im Speicher serialisieren und per User-JWT an OpenWebUI (`POST {OWUI_BASE_URL}/api/v1/files/`) hochladen. Kein lokaler Disk-Write. Antwort enthält `owui_url`.
 
 State-Lifecycle: `_projects` ist eine `cachetools.TTLCache` (Sliding-TTL via Re-Insert nach jedem Tool-Call, harter `maxsize=10_000`-Cap gegen unbegrenztes Wachstum). Lazy Eviction beim Zugriff plus aktiver Background-Sweep via `_sweep_projects` → `cache.expire()`. TTL und Sweep-Intervall kommen aus `.env` (`PROJECT_TTL_SECONDS`, `PROJECT_SWEEP_INTERVAL_SECONDS`, Defaults 3600 / 300).
 
-Concurrency: jedes `_Project` hat ein `asyncio.Lock`-Feld. Alle mutierenden Tools (`append_slide`, `edit_slide`, `remove_slides`, `save_project`) wrappen ihren Mutationsblock in `async with project.lock:`, sodass python-pptx-Aufrufe auf demselben Projekt serialisiert sind. In `save_project` wird der Upload-Call **außerhalb** des Locks ausgeführt — der `BytesIO`-Snapshot entsteht innerhalb des Locks, der I/O-bound Upload blockiert danach keine weiteren Mutationen. OWUI-Fehler (`httpx.HTTPStatusError`, `httpx.RequestError`) werden in eine `RuntimeError` mit lesbarer Meldung umgewandelt.
+Concurrency: jedes `Project` hat ein `asyncio.Lock`-Feld. Alle mutierenden Tools (`append_slide`, `edit_slide`, `remove_slides`, `download_project`) wrappen ihren Mutationsblock in `async with project.lock:`, sodass python-pptx-Aufrufe auf demselben Projekt serialisiert sind. In `download_project` wird der Upload-Call **außerhalb** des Locks ausgeführt — der `BytesIO`-Snapshot entsteht innerhalb des Locks, der I/O-bound Upload blockiert danach keine weiteren Mutationen. OWUI-Fehler (`httpx.HTTPStatusError`, `httpx.RequestError`) werden in eine `RuntimeError` mit lesbarer Meldung umgewandelt.
+
+Auth: kein manuelles `get_access_token()` in Tools. Stattdessen FastMCP-DI via Default-Args — `user_id: str = TokenClaim("id")`, `project: Project = Depends(_get_project)`, ggf. `token: AccessToken = CurrentAccessToken()`. Der Helper `_get_project` löst `_projects[user_id]` auf und raised `ValueError` wenn kein Projekt existiert.
 
 ## Projektstruktur
 
 ```
-PPTX-MCP/
+OWUI-Office-MCP/
 ├── .env                  # Lokale Konfiguration (nicht committen)
 ├── .env.example          # Vorlage mit allen erwarteten Variablen
 ├── AGENTS.md
 ├── main.py               # FastMCP Entry, mountet Subserver
 ├── config.py             # Lädt .env, stellt Settings-Objekt bereit
 ├── models/               # Pydantic-Modelle für Tool-Returns
-│   └── __init__.py
-├── services/             # Wiederverwendbare Service-Klassen (später)
-│   └── __init__.py
-├── services/            # Subserver-übergreifende Service-Funktionen
 │   ├── __init__.py
-│   └── owui.py          # Generischer OpenWebUI File-Upload
-└── subservers/          # Mountbare FastMCP-Subserver
+│   ├── owui.py           # OpenWebUI Upload-Response
+│   ├── project.py        # Project, DownloadProjectResponse
+│   └── template.py       # LayoutInfo, PlaceholderInfo
+├── services/             # Subserver-übergreifende Service-Funktionen
+│   ├── __init__.py
+│   └── owui.py           # Generischer OpenWebUI File-Upload
+└── subservers/           # Mountbare FastMCP-Subserver
     ├── __init__.py
     └── powerpoint/
         ├── __init__.py
-        ├── server.py    # FastMCP-Instanz + Tools des Subservers
-        └── _utils.py    # python-pptx Helpers (Templates/Slides)
+        ├── server.py     # FastMCP-Instanz + Tools des Subservers
+        └── _utils.py     # python-pptx Helpers (Templates/Slides)
 ```
 
 ## Modulverantwortlichkeiten
@@ -103,14 +108,17 @@ PPTX-MCP/
 
 ### `subservers/powerpoint/`
 - `server.py`:
-  - Eigene `FastMCP`-Instanz mit Lifespan, der Templates per `analyze_templates` einliest und in das Module-Global `_templates` legt. Lifespan yielded ohne State (Globals reichen).
-  - Module-Global `_projects: dict[str, _Project]` — Key ist die User-ID aus dem JWT.
+  - Eigene `FastMCP`-Instanz mit Lifespan, der ausschließlich den TTL-Sweep-Task (`_ttl_task`) verwaltet. Kein Template-Preload — Templates werden lazy pro Tool-Call eingelesen.
+  - Module-Global `_projects: TTLCache[str, Project]` — Key ist die User-ID aus dem JWT.
   - Konstante `PPTX_MIME` (PPTX-Content-Type), wird beim Upload an `services.owui.upload_file` weitergereicht.
-  - Tools (alle `async`): `list_templates`, `create_project`, `append_slide`, `edit_slide`, `remove_slides`, `save_project`. Jeder Tool-Body, der den User braucht, ruft `get_access_token()` direkt auf und liest `claims["id"]` + ggf. `token.token` für Downstream-Aufrufe. Keine Helper-Funktionen.
+  - Tools (alle `async`): `list_templates`, `list_masters`, `list_layouts`, `create_project`, `append_slide`, `edit_slide`, `remove_slides`, `download_project`. Auth-Werte kommen via FastMCP-DI als Default-Args rein (`TokenClaim("id")`, `Depends(_get_project)`, `CurrentAccessToken()`) — keine manuelle Token-Behandlung im Tool-Body.
+  - Helper `_get_project(user_id: str = TokenClaim("id")) -> Project` — DI-Factory, liefert das Projekt aus `_projects` oder raised `ValueError` mit dem Hinweis auf `create_project`.
 - `_utils.py`:
-  - `analyze_templates`: Templates aus dem Template-Ordner einlesen, Metadaten extrahieren (Pfad, Slide-Count, Layouts als `dict[str, LayoutInfo]` mit Placeholders). Rückgabe `dict[str, TemplateInfo]` (Key: `path.stem`).
-  - `drop_slide(pptx, index)`: einzelne Slide aus `sldIdLst` entfernen inkl. `drop_rel` auf die Relation.
-  - `drop_all_slides(pptx)`: schleift `drop_slide` bis leer (Masters/Layouts bleiben).
+  - `list_template_names(templates_dir)`: `.pptx` Dateien im Template-Ordner listen (defekte überspringen + warn).
+  - `list_master_names(templates_dir, template_name)`: Slide Masters → `dict[int, str]`. Name kommt aus `master.name`, fällt zurück auf den Theme-Namen via `RELATIONSHIP_TYPE.THEME`.
+  - `list_layout_infos(templates_dir, template_name, master_index)`: Layouts eines Masters als `dict[str, LayoutInfo]` inkl. Placeholders (`idx`, `name`, `type`).
+  - `drop_slide(presentation, index)`: einzelne Slide aus `sldIdLst` entfernen inkl. `drop_rel` auf die Relation.
+  - `drop_all_slides(presentation)`: schleift `drop_slide` bis leer (Masters/Layouts bleiben).
 
 ### `models/`
 - Pydantic-Modelle für Tool-Returns (z.B. `TemplateInfo`, `TemplateList`).

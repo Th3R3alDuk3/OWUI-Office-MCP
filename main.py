@@ -15,7 +15,7 @@ auth = JWTVerifier(
 )
 
 mcp = FastMCP(
-    name="pptx-mcp",
+    name="OWUI-Office-MCP",
     auth=auth,
     lifespan=combine_lifespans(powerpoint_lifespan),
 )
