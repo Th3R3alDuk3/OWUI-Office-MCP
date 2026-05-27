@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.13"
 dependencies = [
+    "cachetools>=7.1.4",
     "fastmcp>=3.3.1",
     "httpx>=0.28.1",
     "pydantic-settings>=2.14.1",

@@ -1,8 +1,11 @@
+import asyncio
 import io
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+import httpx
+from cachetools import TTLCache
 from fastmcp import FastMCP
 from fastmcp.server.dependencies import get_access_token
 from pptx import Presentation
@@ -23,22 +26,39 @@ PPTX_MIME = (
     "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 )
 
-
 @dataclass
 class _Project:
     template_name: str
     pptx: PresentationType
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
-_projects: dict[str, _Project] = {}
+_settings = get_settings()
+_projects: TTLCache[str, _Project] = TTLCache(
+    maxsize=10_000, ttl=_settings.project_ttl_seconds
+)
 _templates: dict[str, TemplateInfo] = {}
+
+
+async def _sweep_projects(interval: float) -> None:
+    while True:
+        await asyncio.sleep(interval)
+        _projects.expire()
 
 
 @asynccontextmanager
 async def lifespan(server: FastMCP) -> AsyncIterator[None]:
     global _templates
-    _templates = analyze_templates(get_settings().templates_dir)
-    yield
+    _templates = analyze_templates(_settings.templates_dir)
+    sweeper = asyncio.create_task(
+        _sweep_projects(_settings.project_sweep_interval_seconds)
+    )
+    try:
+        yield
+    finally:
+        sweeper.cancel()
+        with suppress(asyncio.CancelledError):
+            await sweeper
 
 
 mcp = FastMCP(name="powerpoint", lifespan=lifespan)
@@ -90,7 +110,7 @@ async def create_project(
         raise ValueError("JWT is missing the 'id' claim.")
     user_id = str(user_id)
 
-    pptx = Presentation(template.path)
+    pptx = await asyncio.to_thread(Presentation, template.path)
     drop_all_slides(pptx)
     _projects[user_id] = _Project(template_name=template_name, pptx=pptx)
 
@@ -130,32 +150,93 @@ async def append_slide(
     user_id = token.claims.get("id")
     if not user_id:
         raise ValueError("JWT is missing the 'id' claim.")
+    user_id = str(user_id)
 
-    project = _projects.get(str(user_id))
+    project = _projects.get(user_id)
     if project is None:
         raise ValueError(
             "No project for this user."
             " Call `create_project` first."
         )
 
-    layout = project.pptx.slide_layouts.get_by_name(layout_name)
-    if layout is None:
-        available = [lo.name for lo in project.pptx.slide_layouts]
-        raise ValueError(
-            f"Layout '{layout_name}' not found in template "
-            f"'{project.template_name}'. Available: {available}"
+    async with project.lock:
+        layout = project.pptx.slide_layouts.get_by_name(layout_name)
+        if layout is None:
+            available = [lo.name for lo in project.pptx.slide_layouts]
+            raise ValueError(
+                f"Layout '{layout_name}' not found in template "
+                f"'{project.template_name}'. Available: {available}"
+            )
+
+        slide = project.pptx.slides.add_slide(layout)
+
+        for idx, text in placeholders.items():
+            with suppress(KeyError):
+                slide.placeholders[idx].text = text
+
+        _projects[user_id] = project
+
+        return SlideInfo(
+            index=len(project.pptx.slides) - 1,
+            layout_name=layout_name,
         )
 
-    slide = project.pptx.slides.add_slide(layout)
 
-    for idx, text in placeholders.items():
-        with suppress(KeyError):
-            slide.placeholders[idx].text = text
+@mcp.tool(
+    name="edit_slide",
+    description=(
+        "Update text placeholders on an existing slide of the calling user's "
+        "project, identified by zero-based index. Pass a mapping from "
+        "placeholder index (`idx`) to the new text value; only those "
+        "placeholders are modified, the rest are left as-is. Returns the "
+        "slide's index and its layout name."
+    ),
+)
+async def edit_slide(
+    index: int = Field(
+        description="Zero-based index of the slide to edit."
+    ),
+    placeholders: dict[int, str] = Field(
+        description=(
+            "Mapping from placeholder index (`idx`) to the new text value. "
+            "Only keys listed here are updated; other placeholders stay as-is."
+        ),
+    ),
+) -> SlideInfo:
+    token = get_access_token()
+    if token is None:
+        raise ValueError("Authentication required.")
+    user_id = token.claims.get("id")
+    if not user_id:
+        raise ValueError("JWT is missing the 'id' claim.")
+    user_id = str(user_id)
 
-    return SlideInfo(
-        index=len(project.pptx.slides) - 1,
-        layout_name=layout_name,
-    )
+    project = _projects.get(user_id)
+    if project is None:
+        raise ValueError(
+            "No project for this user."
+            " Call `create_project` first."
+        )
+
+    async with project.lock:
+        count = len(project.pptx.slides)
+        if not 0 <= index < count:
+            raise ValueError(
+                f"Slide index {index} out of range."
+                f" Project has {count} slide(s) (valid: 0..{count - 1})."
+            )
+
+        slide = project.pptx.slides[index]
+        for idx, text in placeholders.items():
+            with suppress(KeyError):
+                slide.placeholders[idx].text = text
+
+        _projects[user_id] = project
+
+        return SlideInfo(
+            index=index,
+            layout_name=slide.slide_layout.name,
+        )
 
 
 @mcp.tool(
@@ -190,22 +271,25 @@ async def remove_slides(
             " Call `create_project` first."
         )
 
-    count = len(project.pptx.slides)
-    out_of_range = [i for i in indices if not 0 <= i < count]
-    if out_of_range:
-        raise ValueError(
-            f"Slide indices out of range {out_of_range}."
-            f" Project has {count} slide(s) (valid: 0..{count - 1})."
+    async with project.lock:
+        count = len(project.pptx.slides)
+        out_of_range = [i for i in indices if not 0 <= i < count]
+        if out_of_range:
+            raise ValueError(
+                f"Slide indices out of range {out_of_range}."
+                f" Project has {count} slide(s) (valid: 0..{count - 1})."
+            )
+
+        for i in sorted(set(indices), reverse=True):
+            drop_slide(project.pptx, i)
+
+        _projects[user_id] = project
+
+        return ProjectInfo(
+            user_id=user_id,
+            template_name=project.template_name,
+            slide_count=len(project.pptx.slides),
         )
-
-    for i in sorted(set(indices), reverse=True):
-        drop_slide(project.pptx, i)
-
-    return ProjectInfo(
-        user_id=user_id,
-        template_name=project.template_name,
-        slide_count=len(project.pptx.slides),
-    )
 
 
 @mcp.tool(
@@ -235,32 +319,48 @@ async def save_project(
     user_id = token.claims.get("id")
     if not user_id:
         raise ValueError("JWT is missing the 'id' claim.")
+    user_id = str(user_id)
 
-    project = _projects.get(str(user_id))
+    project = _projects.get(user_id)
     if project is None:
         raise ValueError(
             "No project for this user."
             " Call `create_project` first."
         )
 
-    stem = filename.strip() or project.template_name
-    out_name = f"{stem}.pptx"
+    async with project.lock:
+        stem = filename.strip() or project.template_name
+        out_name = f"{stem}.pptx"
 
-    buf = io.BytesIO()
-    project.pptx.save(buf)
+        buf = io.BytesIO()
+        await asyncio.to_thread(project.pptx.save, buf)
 
-    base_url = get_settings().owui_base_url
-    uploaded = await upload_file(
-        filename=out_name,
-        data=buf.getvalue(),
-        content_type=PPTX_MIME,
-        token=token.token,
-        base_url=base_url,
-    )
+        _projects[user_id] = project
+        slide_count = len(project.pptx.slides)
+
+    base_url = _settings.owui_base_url.rstrip("/")
+    try:
+        uploaded = await upload_file(
+            filename=out_name,
+            data=buf.getvalue(),
+            content_type=PPTX_MIME,
+            token=token.token,
+            base_url=base_url,
+        )
+    except httpx.HTTPStatusError as exc:
+        raise RuntimeError(
+            f"OpenWebUI rejected the upload (HTTP {exc.response.status_code})."
+            f" Response body: {exc.response.text[:500]}"
+        ) from exc
+    except httpx.RequestError as exc:
+        raise RuntimeError(
+            f"Could not reach OpenWebUI at {base_url}."
+            f" Check OWUI_BASE_URL and that the service is running. Detail: {exc}"
+        ) from exc
 
     return SavedProjectInfo(
         filename=out_name,
-        slide_count=len(project.pptx.slides),
+        slide_count=slide_count,
         owui_file_id=uploaded.id,
-        owui_url=f"{base_url.rstrip('/')}/api/v1/files/{uploaded.id}/content",
+        owui_url=f"{base_url}/api/v1/files/{uploaded.id}/content",
     )

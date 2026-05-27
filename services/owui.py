@@ -1,5 +1,3 @@
-from typing import IO
-
 import httpx
 
 from models.owui import OWUIFile
@@ -7,7 +5,7 @@ from models.owui import OWUIFile
 
 async def upload_file(
     filename: str,
-    data: IO[bytes],
+    data: bytes,
     content_type: str,
     token: str,
     base_url: str,
@@ -15,7 +13,7 @@ async def upload_file(
 ) -> OWUIFile:
     async with httpx.AsyncClient(timeout=timeout) as client:
         response = await client.post(
-            url=f"{base_url.rstrip('/')}/api/v1/files/",
+            url=f"{base_url}/api/v1/files/",
             headers={"Authorization": f"Bearer {token}"},
             files={"file": (filename, data, content_type)},
         )

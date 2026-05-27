@@ -50,10 +50,13 @@ Ziel: sauber, minimal, erweiterbar. **KISS** ist Pflicht — keine Abstraktionen
    - `list_templates` — beim Start analysierte Templates zurückgeben.
    - `create_project` — leeres Projekt aus einem Template anlegen (überschreibt existierendes).
    - `append_slide` — Folie aus einem Layout anhängen, Placeholder per `idx` füllen.
+   - `edit_slide` — nur die Placeholder-Inhalte einer bestehenden Folie (per Index) aktualisieren; nicht aufgeführte Placeholder bleiben unverändert.
    - `remove_slides` — Folien per Indexliste löschen.
    - `save_project` — Projekt im Speicher serialisieren und per User-JWT an OpenWebUI (`POST {OPENWEBUI_BASE_URL}/api/v1/files/`) hochladen. Kein lokaler Disk-Write. Antwort enthält `openwebui_file_id`.
 
-State-Lifecycle: kein Auto-Cleanup. `_projects[user_id]` lebt bis Server-Restart oder bis derselbe User `create_project` erneut aufruft.
+State-Lifecycle: `_projects` ist eine `cachetools.TTLCache` (Sliding-TTL via Re-Insert nach jedem Tool-Call, harter `maxsize=10_000`-Cap gegen unbegrenztes Wachstum). Lazy Eviction beim Zugriff plus aktiver Background-Sweep via `_sweep_projects` → `cache.expire()`. TTL und Sweep-Intervall kommen aus `.env` (`PROJECT_TTL_SECONDS`, `PROJECT_SWEEP_INTERVAL_SECONDS`, Defaults 3600 / 300).
+
+Concurrency: jedes `_Project` hat ein `asyncio.Lock`-Feld. Alle mutierenden Tools (`append_slide`, `edit_slide`, `remove_slides`, `save_project`) wrappen ihren Mutationsblock in `async with project.lock:`, sodass python-pptx-Aufrufe auf demselben Projekt serialisiert sind. In `save_project` wird der Upload-Call **außerhalb** des Locks ausgeführt — der `BytesIO`-Snapshot entsteht innerhalb des Locks, der I/O-bound Upload blockiert danach keine weiteren Mutationen. OWUI-Fehler (`httpx.HTTPStatusError`, `httpx.RequestError`) werden in eine `RuntimeError` mit lesbarer Meldung umgewandelt.
 
 ## Projektstruktur
 
@@ -94,6 +97,8 @@ PPTX-MCP/
   - `TEMPLATES_DIR: Path` — Ordner mit `.pptx` Templates.
   - `JWT_SECRET: str`, `JWT_ALGORITHM: str` (default `HS256`) — Shared Secret für OpenWebUI-Tokens.
   - `OWUI_BASE_URL: str` — Base-URL der OpenWebUI-Instanz für File-Upload (z.B. `http://localhost:3000`).
+  - `PROJECT_TTL_SECONDS: int` (default 3600) — Sliding-TTL für In-Memory-Projekte pro User.
+  - `PROJECT_SWEEP_INTERVAL_SECONDS: int` (default 300) — Intervall für den aktiven Sweep, der abgelaufene Einträge aus dem Cache räumt.
 - Settings sind via `@lru_cache` ein Singleton (`get_settings()`).
 
 ### `subservers/powerpoint/`
@@ -101,7 +106,7 @@ PPTX-MCP/
   - Eigene `FastMCP`-Instanz mit Lifespan, der Templates per `analyze_templates` einliest und in das Module-Global `_templates` legt. Lifespan yielded ohne State (Globals reichen).
   - Module-Global `_projects: dict[str, _Project]` — Key ist die User-ID aus dem JWT.
   - Konstante `PPTX_MIME` (PPTX-Content-Type), wird beim Upload an `services.owui.upload_file` weitergereicht.
-  - Tools (alle `async`): `list_templates`, `create_project`, `append_slide`, `remove_slides`, `save_project`. Jeder Tool-Body, der den User braucht, ruft `get_access_token()` direkt auf und liest `claims["id"]` + ggf. `token.token` für Downstream-Aufrufe. Keine Helper-Funktionen.
+  - Tools (alle `async`): `list_templates`, `create_project`, `append_slide`, `edit_slide`, `remove_slides`, `save_project`. Jeder Tool-Body, der den User braucht, ruft `get_access_token()` direkt auf und liest `claims["id"]` + ggf. `token.token` für Downstream-Aufrufe. Keine Helper-Funktionen.
 - `_utils.py`:
   - `analyze_templates`: Templates aus dem Template-Ordner einlesen, Metadaten extrahieren (Pfad, Slide-Count, Layouts als `dict[str, LayoutInfo]` mit Placeholders). Rückgabe `dict[str, TemplateInfo]` (Key: `path.stem`).
   - `drop_slide(pptx, index)`: einzelne Slide aus `sldIdLst` entfernen inkl. `drop_rel` auf die Relation.

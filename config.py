@@ -21,6 +21,9 @@ class Settings(BaseSettings):
 
     owui_base_url: str
 
+    project_ttl_seconds: int = 3600
+    project_sweep_interval_seconds: int = 300
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

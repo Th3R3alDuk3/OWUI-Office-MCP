@@ -28,6 +28,7 @@ Läuft als `streamable-http` auf `HOST:PORT` aus `.env`. JWT-Auth über OpenWebU
 | `powerpoint_list_templates` | Listet beim Start analysierte Templates (Name, Pfad, Slide-Count, Layouts + Placeholders) |
 | `powerpoint_create_project` | Legt ein leeres In-Memory-Projekt für den User an (Slides aus dem Template werden entfernt, Masters/Layouts bleiben) |
 | `powerpoint_append_slide` | Hängt eine Folie aus einem Layout an; optional Placeholder per `idx` füllen |
+| `powerpoint_edit_slide` | Ändert nur die Placeholder-Inhalte einer bestehenden Folie (Index + Mapping `idx` → Text); andere Placeholder bleiben unangetastet |
 | `powerpoint_remove_slides` | Entfernt Folien per 0-basiertem Index (Liste, Duplikate ignoriert) |
 | `powerpoint_save_project` | Serialisiert das Projekt im Speicher und lädt es per User-JWT zu OpenWebUI hoch (`/api/v1/files/`) — kein Disk-Write |
 
