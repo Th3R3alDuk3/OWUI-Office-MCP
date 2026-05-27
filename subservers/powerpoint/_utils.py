@@ -23,7 +23,7 @@ def list_template_names(
 
     for file_path in sorted(templates_dir.glob("*.pptx")):
         try:
-            _ = Presentation(str(file_path))
+            _ = Presentation(file_path)
         except Exception as error:
             logger.warning(f"Skipping template {file_path.name}: {error}")
         else:
@@ -93,9 +93,15 @@ _RID_ATTR = (
 
 
 def drop_slide(presentation: PresentationType, index: int) -> None:
-    
+
     slide_id_lst = presentation.slides._sldIdLst
-    slide_id = list(slide_id_lst)[index]
+
+    try:
+        slide_id = list(slide_id_lst)[index]
+    except IndexError:
+        raise ValueError(
+            f"Slide index {index} out of range."
+        )
 
     if rid := slide_id.get(_RID_ATTR):
         presentation.part.drop_rel(rid)

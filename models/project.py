@@ -1,13 +1,13 @@
 from asyncio import Lock
 from dataclasses import dataclass, field
 
-from pptx import Presentation
+from pptx.presentation import Presentation as PresentationType
 from pydantic import BaseModel
 
 
 @dataclass
 class Project:
-    presentation: Presentation
+    presentation: PresentationType
     lock: Lock = field(default_factory=Lock)
 
 

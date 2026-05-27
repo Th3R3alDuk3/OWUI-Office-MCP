@@ -118,15 +118,14 @@ async def list_layouts(
 async def create_project(
     template_name: str = Field(description="From `list_templates`."),
     user_id: str = TokenClaim("id"),
-) -> str:
+) -> None:
 
     template_file = _settings.templates_dir.joinpath(template_name)
 
-    presentation = await to_thread(Presentation, str(template_file))
+    presentation = await to_thread(Presentation, template_file)
     drop_all_slides(presentation)
 
     _projects[user_id] = Project(presentation=presentation)
-    return user_id
 
 
 @mcp.tool(
@@ -150,7 +149,13 @@ async def append_slide(
 
     async with project.lock:
 
-        master = project.presentation.slide_masters[master_index]
+        try:
+            master = project.presentation.slide_masters[master_index]
+        except IndexError:
+            raise ValueError(
+                f"Master '{master_index}' not found."
+            )
+
         layout = master.slide_layouts.get_by_name(layout_name)
 
         if layout is None:
@@ -165,7 +170,7 @@ async def append_slide(
                 slide.placeholders[idx].text = text
 
         _projects[user_id] = project
-        return len(project.presentation.slides) - 1
+        return len(project.presentation.slides)
 
 
 @mcp.tool(
@@ -182,18 +187,22 @@ async def edit_slide(
     ),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
-) -> int:
+) -> None:
 
     async with project.lock:
 
-        slide = project.presentation.slides[slide_index]
+        try:
+            slide = project.presentation.slides[slide_index]
+        except IndexError:
+            raise ValueError(
+                f"Slide index {slide_index} out of range."
+            )
 
         for idx, text in placeholders.items():
             with suppress(KeyError):
                 slide.placeholders[idx].text = text
 
         _projects[user_id] = project
-        return len(project.presentation.slides) - 1
 
 
 @mcp.tool(
@@ -216,7 +225,7 @@ async def remove_slides(
 
         _projects[user_id] = project
 
-        return len(project.presentation.slides) - 1
+        return len(project.presentation.slides)
 
 
 @mcp.tool(

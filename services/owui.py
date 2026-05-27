@@ -8,13 +8,12 @@ async def upload_file(
     data: bytes,
     content_type: str,
     token: str,
-    base_url: str,
-    timeout: float = 30.0,
+    base_url: str
 ) -> OWUIFile:
         
     try:
 
-        async with AsyncClient(timeout=timeout, verify=False) as client:
+        async with AsyncClient(verify=False) as client:
             response = await client.post(
                 url=f"{base_url}/api/v1/files/",
                 headers={"Authorization": f"Bearer {token}"},
