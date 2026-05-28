@@ -90,3 +90,24 @@ def drop_block(document: DocumentType, index: int) -> None:
 def drop_all_blocks(document: DocumentType) -> None:
     for block in _content_blocks(document):
         document.element.body.remove(block)
+
+
+def move_block(
+    document: DocumentType,
+    from_index: int,
+    to_index: int,
+) -> None:
+
+    body = document.element.body
+    blocks = _content_blocks(document)
+
+    try:
+        block = blocks[from_index]
+    except IndexError:
+        raise ValueError(f"Block index {from_index} out of range.")
+
+    if not -len(blocks) <= to_index < len(blocks):
+        raise ValueError(f"Target index {to_index} out of range.")
+
+    body.remove(block)
+    body.insert(to_index % len(blocks), block)

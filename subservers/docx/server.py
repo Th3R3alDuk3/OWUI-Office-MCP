@@ -20,6 +20,7 @@ from subservers.docx._utils import (
     drop_block,
     list_style_infos,
     list_template_names,
+    move_block as _move_block,
 )
 
 DOCX_MIME = (
@@ -84,7 +85,7 @@ async def list_templates() -> list[str]:
     description=(
         "Step 2: list paragraph and table styles of a template "
         "(name -> type, builtin). Then call `create_project` and "
-        "`append_paragraph` / `append_table`."
+        "`insert_paragraph` / `insert_table`."
     ),
 )
 async def list_styles(
@@ -98,8 +99,8 @@ async def list_styles(
     name="create_project",
     description=(
         "Step 3: create an empty in-memory project from a template. Overwrites "
-        "any existing project for the user. Then call `append_paragraph` / "
-        "`append_table` per block."
+        "any existing project for the user. Then call `insert_paragraph` / "
+        "`insert_table` per block."
     ),
 )
 async def create_project(
@@ -116,18 +117,26 @@ async def create_project(
 
 
 @mcp.tool(
-    name="append_paragraph",
+    name="insert_paragraph",
     description=(
-        "Step 4a: append a paragraph. Use a paragraph style from `list_styles` "
-        "(e.g. `Heading 1`, `Normal`) to control formatting. Returns the new "
-        "block count."
+        "Step 4a: insert a paragraph. Use a paragraph style from `list_styles` "
+        "(e.g. `Heading 1`, `Normal`) to control formatting. Without "
+        "`block_index` the paragraph is appended; otherwise it is inserted at "
+        "that zero-based position. Returns the new block count."
     ),
 )
-async def append_paragraph(
+async def insert_paragraph(
     text: str = Field(description="Paragraph text."),
     style: str | None = Field(
         default=None,
         description="Paragraph style name from `list_styles`. None = default.",
+    ),
+    block_index: int | None = Field(
+        default=None,
+        description=(
+            "Zero-based position to insert at. If omitted, the block is "
+            "appended at the end."
+        ),
     ),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
@@ -144,19 +153,24 @@ async def append_paragraph(
 
         project.document.add_paragraph(text, style=style)
 
+        if block_index is not None:
+            _move_block(
+                project.document, count_blocks(project.document) - 1, block_index)
+
         _projects[user_id] = project
         return count_blocks(project.document)
 
 
 @mcp.tool(
-    name="append_table",
+    name="insert_table",
     description=(
-        "Step 4b: append a table with `rows` x `cols` cells. Optionally fill "
-        "cells from `data` (row-major; extra rows/cols are ignored). Returns "
-        "the new block count."
+        "Step 4b: insert a table with `rows` x `cols` cells. Optionally fill "
+        "cells from `data` (row-major; extra rows/cols are ignored). Without "
+        "`block_index` the table is appended; otherwise it is inserted at that "
+        "zero-based position. Returns the new block count."
     ),
 )
-async def append_table(
+async def insert_table(
     rows: int = Field(gt=0, description="Number of rows."),
     cols: int = Field(gt=0, description="Number of columns."),
     style: str | None = Field(
@@ -166,6 +180,13 @@ async def append_table(
     data: list[list[str]] = Field(
         default_factory=list,
         description="Row-major cell text. Missing cells stay empty.",
+    ),
+    block_index: int | None = Field(
+        default=None,
+        description=(
+            "Zero-based position to insert at. If omitted, the block is "
+            "appended at the end."
+        ),
     ),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
@@ -188,6 +209,68 @@ async def append_table(
         for r, row_data in enumerate(data[:rows]):
             for c, cell_text in enumerate(row_data[:cols]):
                 table.cell(r, c).text = cell_text
+
+        if block_index is not None:
+            _move_block(
+                project.document, count_blocks(project.document) - 1, block_index)
+
+        _projects[user_id] = project
+        return count_blocks(project.document)
+
+
+@mcp.tool(
+    name="insert_page_break",
+    description=(
+        "Step 4c: insert a page break as a body block. Without `block_index` "
+        "it is appended; otherwise it is inserted at that zero-based position. "
+        "Returns the new block count."
+    ),
+)
+async def insert_page_break(
+    block_index: int | None = Field(
+        default=None,
+        description=(
+            "Zero-based position to insert at. If omitted, the block is "
+            "appended at the end."
+        ),
+    ),
+    user_id: str = TokenClaim("id"),
+    project: Project = Depends(_get_project),
+) -> int:
+
+    async with project.lock:
+
+        project.document.add_page_break()
+
+        if block_index is not None:
+            _move_block(
+                project.document, count_blocks(project.document) - 1, block_index)
+
+        _projects[user_id] = project
+        return count_blocks(project.document)
+
+
+@mcp.tool(
+    name="move_block",
+    description=(
+        "Move a body block (paragraph or table) to a new position by "
+        "zero-based index. Negative `to_index` counts from the end."
+    ),
+)
+async def move_block(
+    from_index: int = Field(
+        description="Zero-based current block index.",
+    ),
+    to_index: int = Field(
+        description="Zero-based target block index.",
+    ),
+    user_id: str = TokenClaim("id"),
+    project: Project = Depends(_get_project),
+) -> int:
+
+    async with project.lock:
+
+        _move_block(project.document, from_index, to_index)
 
         _projects[user_id] = project
         return count_blocks(project.document)

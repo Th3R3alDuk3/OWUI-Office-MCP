@@ -47,8 +47,9 @@ Jeder Subserver ist unter seiner Dateiendung als Namespace gemounted (`pptx.*`, 
 | 🎨 `list_masters` | Slide Masters eines Templates |
 | 📐 `list_layouts` | Layouts + Placeholders eines Masters |
 | 📁 `create_project` | leeres Projekt aus einem Template |
-| ➕ `append_slide` | Folie aus einem Layout anhängen |
+| ➕ `insert_slide` | Folie aus einem Layout einfügen (optional an Index, sonst anhängen) |
 | ✏️ `edit_slide` | Placeholder einer Folie ändern |
+| ↕️ `move_slide` | Folie per Index an neue Position verschieben |
 | 🗑️ `remove_slides` | Folien per Index entfernen |
 | 💾 `download_project` | Projekt zu OpenWebUI hochladen |
 
@@ -59,8 +60,10 @@ Jeder Subserver ist unter seiner Dateiendung als Namespace gemounted (`pptx.*`, 
 | 📋 `list_templates` | verfügbare `.docx` Templates |
 | 🎨 `list_styles` | Paragraph- und Table-Styles eines Templates |
 | 📁 `create_project` | leeres Projekt aus einem Template |
-| ➕ `append_paragraph` | Paragraph anhängen (Heading via Style-Name) |
-| 📊 `append_table` | Tabelle anhängen (optional mit Zelldaten) |
+| ➕ `insert_paragraph` | Paragraph einfügen (optional an Index, sonst anhängen) |
+| 📊 `insert_table` | Tabelle einfügen (optional mit Zelldaten, optional an Index) |
+| 📃 `insert_page_break` | Seitenumbruch als Body-Block einfügen (optional an Index) |
+| ↕️ `move_block` | Body-Block (Paragraph & Table) per Index verschieben |
 | 🗑️ `remove_blocks` | Body-Blöcke (Paragraph & Table) per Index entfernen |
 | 💾 `download_project` | Projekt zu OpenWebUI hochladen |
 
