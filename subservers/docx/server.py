@@ -57,6 +57,17 @@ def _get_project(
     return project
 
 
+def _touch(
+    user_id: str,
+    project: Project,
+) -> None:
+    # Refresh the sliding TTL, but only if this is still the live project:
+    # a concurrent `create_project` may have replaced it while we mutated a
+    # now-stale copy. No `await` between get and set, so this is atomic.
+    if _projects.get(user_id) is project:
+        _projects[user_id] = project
+
+
 @asynccontextmanager
 async def lifespan(
     server: FastMCP,
@@ -166,7 +177,7 @@ async def insert_paragraph(
             _move_block(
                 project.document, count_blocks(project.document) - 1, block_index)
 
-        _projects[user_id] = project
+        _touch(user_id, project)
         return count_blocks(project.document)
 
 
@@ -229,7 +240,7 @@ async def insert_table(
             _move_block(
                 project.document, count_blocks(project.document) - 1, block_index)
 
-        _projects[user_id] = project
+        _touch(user_id, project)
         return count_blocks(project.document)
 
 
@@ -261,7 +272,7 @@ async def insert_page_break(
             _move_block(
                 project.document, count_blocks(project.document) - 1, block_index)
 
-        _projects[user_id] = project
+        _touch(user_id, project)
         return count_blocks(project.document)
 
 
@@ -316,7 +327,7 @@ async def edit_paragraph(
 
         block.text = text
 
-        _projects[user_id] = project
+        _touch(user_id, project)
 
 
 @mcp.tool(
@@ -341,7 +352,7 @@ async def move_block(
 
         _move_block(project.document, from_index, to_index)
 
-        _projects[user_id] = project
+        _touch(user_id, project)
         return count_blocks(project.document)
 
 
@@ -364,7 +375,7 @@ async def remove_blocks(
 
         drop_blocks(project.document, indices)
 
-        _projects[user_id] = project
+        _touch(user_id, project)
 
         return count_blocks(project.document)
 
@@ -393,7 +404,7 @@ async def download_project(
         buffer = BytesIO()
         await to_thread(project.document.save, buffer)
 
-        _projects[user_id] = project
+        _touch(user_id, project)
         block_count = count_blocks(project.document)
 
     base_url = _settings.owui_base_url.rstrip("/")

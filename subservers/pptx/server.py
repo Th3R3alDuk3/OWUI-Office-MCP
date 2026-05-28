@@ -55,6 +55,17 @@ def _get_project(
     return project
 
 
+def _touch(
+    user_id: str,
+    project: Project,
+) -> None:
+    # Refresh the sliding TTL, but only if this is still the live project:
+    # a concurrent `create_project` may have replaced it while we mutated a
+    # now-stale copy. No `await` between get and set, so this is atomic.
+    if _projects.get(user_id) is project:
+        _projects[user_id] = project
+
+
 @asynccontextmanager
 async def lifespan(
     server: FastMCP,
@@ -192,7 +203,7 @@ async def insert_slide(
                 slide_index,
             )
 
-        _projects[user_id] = project
+        _touch(user_id, project)
         return count_slides(project.presentation)
 
 
@@ -240,7 +251,7 @@ async def edit_slide(
             with suppress(KeyError):
                 slide.placeholders[idx].text = text
 
-        _projects[user_id] = project
+        _touch(user_id, project)
 
 
 @mcp.tool(
@@ -265,7 +276,7 @@ async def move_slide(
 
         _move_slide(project.presentation, from_index, to_index)
 
-        _projects[user_id] = project
+        _touch(user_id, project)
         return count_slides(project.presentation)
 
 
@@ -286,7 +297,7 @@ async def remove_slides(
 
         drop_slides(project.presentation, indices)
 
-        _projects[user_id] = project
+        _touch(user_id, project)
 
         return count_slides(project.presentation)
 
@@ -315,7 +326,7 @@ async def download_project(
         buffer = BytesIO()
         await to_thread(project.presentation.save, buffer)
 
-        _projects[user_id] = project
+        _touch(user_id, project)
         slide_count = count_slides(project.presentation)
 
     base_url = _settings.owui_base_url.rstrip("/")
