@@ -61,7 +61,6 @@ Jeder Subserver ist unter seiner Dateiendung als Namespace gemounted (`pptx.*`, 
 | 📁 `create_project` | leeres Projekt aus einem Template |
 | ➕ `append_paragraph` | Paragraph anhängen (Heading via Style-Name) |
 | 📊 `append_table` | Tabelle anhängen (optional mit Zelldaten) |
-| ✏️ `edit_paragraph` | Paragraph-Text per Index ersetzen |
 | 🗑️ `remove_blocks` | Body-Blöcke (Paragraph & Table) per Index entfernen |
 | 💾 `download_project` | Projekt zu OpenWebUI hochladen |
 

@@ -5,6 +5,7 @@ from io import BytesIO
 
 from cachetools import TTLCache
 from docx import Document
+from docx.enum.style import WD_STYLE_TYPE
 from fastmcp import FastMCP
 from fastmcp.dependencies import CurrentAccessToken, Depends, TokenClaim
 from fastmcp.server.auth import AccessToken
@@ -135,11 +136,13 @@ async def append_paragraph(
     async with project.lock:
 
         try:
-            project.document.add_paragraph(text, style=style)
-        except KeyError:
+            project.document.styles.get_style_id(style, WD_STYLE_TYPE.PARAGRAPH)
+        except (KeyError, ValueError):
             raise ValueError(
                 f"Style '{style}' not found."
             )
+
+        project.document.add_paragraph(text, style=style)
 
         _projects[user_id] = project
         return count_blocks(project.document)
@@ -170,15 +173,17 @@ async def append_table(
 
     async with project.lock:
 
+        try:
+            project.document.styles.get_style_id(style, WD_STYLE_TYPE.TABLE)
+        except (KeyError, ValueError):
+            raise ValueError(
+                f"Style '{style}' not found."
+            )
+
         table = project.document.add_table(rows=rows, cols=cols)
 
         if style is not None:
-            try:
-                table.style = style
-            except KeyError:
-                raise ValueError(
-                    f"Style '{style}' not found."
-                )
+            table.style = style
 
         for r, row_data in enumerate(data[:rows]):
             for c, cell_text in enumerate(row_data[:cols]):
@@ -186,34 +191,6 @@ async def append_table(
 
         _projects[user_id] = project
         return count_blocks(project.document)
-
-
-@mcp.tool(
-    name="edit_paragraph",
-    description=(
-        "Replace the text of an existing paragraph by zero-based paragraph "
-        "index. Note: indices count paragraphs only, not tables."
-    ),
-)
-async def edit_paragraph(
-    paragraph_index: int = Field(description="Zero-based paragraph index."),
-    text: str = Field(description="New paragraph text."),
-    user_id: str = TokenClaim("id"),
-    project: Project = Depends(_get_project),
-) -> None:
-
-    async with project.lock:
-
-        try:
-            paragraph = project.document.paragraphs[paragraph_index]
-        except IndexError:
-            raise ValueError(
-                f"Paragraph index {paragraph_index} out of range."
-            )
-
-        paragraph.text = text
-
-        _projects[user_id] = project
 
 
 @mcp.tool(

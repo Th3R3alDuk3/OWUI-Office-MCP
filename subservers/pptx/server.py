@@ -64,7 +64,7 @@ async def lifespan(server: FastMCP) -> AsyncIterator[None]:
             await task
 
 
-mcp = FastMCP(name="powerpoint")
+mcp = FastMCP(name="pptx")
 
 
 @mcp.tool(
