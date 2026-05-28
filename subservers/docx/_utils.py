@@ -4,8 +4,10 @@ from pathlib import Path
 from docx import Document
 from docx.document import Document as DocumentType
 from docx.enum.style import WD_STYLE_TYPE
+from docx.table import Table
+from docx.text.paragraph import Paragraph
 
-from models.docx import StyleInfo
+from models.docx import BlockInfo, StyleInfo
 
 
 logger = get_logger(__name__)
@@ -13,6 +15,8 @@ logger = get_logger(__name__)
 
 _W_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 _SECT_PR = f"{_W_NS}sectPr"
+_P = f"{_W_NS}p"
+_TBL = f"{_W_NS}tbl"
 
 _RELEVANT_STYLE_TYPES = {
     WD_STYLE_TYPE.PARAGRAPH,
@@ -62,18 +66,72 @@ def list_style_infos(
     return style_infos
 
 
-def _content_blocks(document: DocumentType) -> list:
-    return [
-        child for child in document.element.body
-        if child.tag != _SECT_PR
-    ]
+def _content_blocks(
+    document: DocumentType,
+) -> list:
+
+    childs: list = []
+
+    for child in document.element.body:
+        if child.tag != _SECT_PR:
+            childs.append(child)
+
+    return childs
 
 
-def count_blocks(document: DocumentType) -> int:
+def count_blocks(
+    document: DocumentType,
+) -> int:
     return len(_content_blocks(document))
 
 
-def drop_block(document: DocumentType, index: int) -> None:
+def content_blocks(
+    document: DocumentType,
+) -> list:
+
+    body = document.element.body
+
+    blocks: list = []
+
+    for child in _content_blocks(document):
+
+        if child.tag == _P:
+            blocks.append(Paragraph(child, body))
+        elif child.tag == _TBL:
+            blocks.append(Table(child, body))
+        else:
+            blocks.append(child)
+
+    return blocks
+
+
+def list_block_infos(
+    document: DocumentType,
+) -> list[BlockInfo]:
+
+    block_infos: list[BlockInfo] = []
+
+    for block in content_blocks(document):
+
+        if isinstance(block, Paragraph):
+            block_infos.append(
+                BlockInfo(type="paragraph", text=block.text))
+
+        elif isinstance(block, Table):
+            block_infos.append(
+                BlockInfo(type="table", 
+                    text=f"{len(block.rows)}x{len(block.columns)} table"))
+        else:
+            block_infos.append(
+                BlockInfo(type=block.tag, text=""))
+
+    return block_infos
+
+
+def drop_block(
+    document: DocumentType,
+    index: int,
+) -> None:
 
     blocks = _content_blocks(document)
 
@@ -87,7 +145,9 @@ def drop_block(document: DocumentType, index: int) -> None:
     document.element.body.remove(block)
 
 
-def drop_all_blocks(document: DocumentType) -> None:
+def drop_all_blocks(
+    document: DocumentType,
+) -> None:
     for block in _content_blocks(document):
         document.element.body.remove(block)
 

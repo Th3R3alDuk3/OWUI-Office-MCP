@@ -6,18 +6,21 @@ from io import BytesIO
 from cachetools import TTLCache
 from docx import Document
 from docx.enum.style import WD_STYLE_TYPE
+from docx.text.paragraph import Paragraph
 from fastmcp import FastMCP
 from fastmcp.dependencies import CurrentAccessToken, Depends, TokenClaim
 from fastmcp.server.auth import AccessToken
 from pydantic import Field
 
 from config import get_settings
-from models.docx import DownloadProjectResponse, Project, StyleInfo
+from models.docx import BlockInfo, DownloadProjectResponse, Project, StyleInfo
 from services.owui import upload_file
 from subservers.docx._utils import (
+    content_blocks,
     count_blocks,
     drop_all_blocks,
     drop_block,
+    list_block_infos,
     list_style_infos,
     list_template_names,
     move_block as _move_block,
@@ -251,6 +254,60 @@ async def insert_page_break(
 
 
 @mcp.tool(
+    name="list_blocks",
+    description=(
+        "List the current body blocks in order. The list position is the "
+        "zero-based index; each entry has a type (`paragraph` or `table`) and "
+        "a text preview. Use it to target `edit_paragraph`, `move_block`, or "
+        "`remove_blocks`."
+    ),
+)
+async def list_blocks(
+    project: Project = Depends(_get_project),
+) -> list[BlockInfo]:
+    async with project.lock:
+        return list_block_infos(project.document)
+
+
+@mcp.tool(
+    name="edit_paragraph",
+    description=(
+        "Update the text of an existing paragraph block by zero-based index, "
+        "keeping its style. Use `list_blocks` to find the index. Only "
+        "paragraphs are editable here, not tables."
+    ),
+)
+async def edit_paragraph(
+    block_index: int = Field(
+        description="Zero-based block index."
+    ),
+    text: str = Field(
+        description="New paragraph text."
+    ),
+    user_id: str = TokenClaim("id"),
+    project: Project = Depends(_get_project),
+) -> None:
+
+    async with project.lock:
+
+        try:
+            block = content_blocks(project.document)[block_index]
+        except IndexError:
+            raise ValueError(
+                f"Block index {block_index} out of range."
+            )
+
+        if not isinstance(block, Paragraph):
+            raise ValueError(
+                f"Block {block_index} is not a paragraph."
+            )
+
+        block.text = text
+
+        _projects[user_id] = project
+
+
+@mcp.tool(
     name="move_block",
     description=(
         "Move a body block (paragraph or table) to a new position by "
@@ -284,7 +341,9 @@ async def move_block(
     ),
 )
 async def remove_blocks(
-    indices: list[int] = Field(description="Zero-based block indices."),
+    indices: list[int] = Field(
+        description="Zero-based block indices."
+    ),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
 ) -> int:

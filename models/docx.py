@@ -11,12 +11,17 @@ class Project:
     lock: Lock = field(default_factory=Lock)
 
 
+class StyleInfo(BaseModel):
+    type: str
+    builtin: bool
+
+
+class BlockInfo(BaseModel):
+    type: str
+    text: str
+
+
 class DownloadProjectResponse(BaseModel):
     filename: str
     block_count: int
     owui_url: str
-
-
-class StyleInfo(BaseModel):
-    type: str
-    builtin: bool

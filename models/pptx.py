@@ -11,12 +11,6 @@ class Project:
     lock: Lock = field(default_factory=Lock)
 
 
-class DownloadProjectResponse(BaseModel):
-    filename: str
-    slide_count: int
-    owui_url: str
-
-
 class PlaceholderInfo(BaseModel):
     idx: int
     name: str
@@ -25,3 +19,9 @@ class PlaceholderInfo(BaseModel):
 
 class LayoutInfo(BaseModel):
     placeholders: list[PlaceholderInfo]
+
+
+class DownloadProjectResponse(BaseModel):
+    filename: str
+    slide_count: int
+    owui_url: str
