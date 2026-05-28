@@ -8,11 +8,11 @@
 
 ## 🎯 Status
 
-| Format | Status |
-|---|---|
-| PowerPoint `.pptx` | ✅ |
-| Word `.docx` | ✅ |
-| Excel `.xlsx` | 🚧 |
+| Name | Format | Status |
+|---|---|---|
+| PowerPoint | `.pptx` | ✅ |
+| Word | `.docx` | ✅ |
+| Excel | `.xlsx` | 🚧 |
 
 ## 🚀 Setup
 
@@ -39,7 +39,7 @@ Läuft als `streamable-http` auf `HOST:PORT` aus der `.env`.
 
 Jeder Subserver ist unter seiner Dateiendung als Namespace gemounted (`pptx.*`, `docx.*`). Per-User State pro Subserver (JWT-Claim `id`), Sliding-TTL, Auto-Sweep — keine Disk-Writes.
 
-### `pptx` (10 Tools)
+### `pptx` (10)
 
 | Tool | |
 |---|---|
@@ -54,7 +54,7 @@ Jeder Subserver ist unter seiner Dateiendung als Namespace gemounted (`pptx.*`, 
 | `remove_slides` | Folien per Index entfernen |
 | `download_project` | Projekt zu OpenWebUI hochladen |
 
-### `docx` (11 Tools)
+### `docx` (11)
 
 | Tool | |
 |---|---|
