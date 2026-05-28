@@ -59,9 +59,6 @@ def _touch(
     user_id: str,
     project: Project,
 ) -> None:
-    # Refresh the sliding TTL, but only if this is still the live project:
-    # a concurrent `create_project` may have replaced it while we mutated a
-    # now-stale copy. No `await` between get and set, so this is atomic.
     if _projects.get(user_id) is project:
         _projects[user_id] = project
 
