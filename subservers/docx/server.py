@@ -19,7 +19,7 @@ from subservers.docx._utils import (
     content_blocks,
     count_blocks,
     drop_all_blocks,
-    drop_block,
+    drop_blocks,
     list_block_infos,
     list_style_infos,
     list_template_names,
@@ -34,16 +34,20 @@ DOCX_MIME = (
 _settings = get_settings()
 
 _projects: TTLCache[str, Project] = TTLCache(
-    maxsize=10_000, ttl=_settings.project_ttl_seconds)
+    maxsize=1_000, ttl=_settings.project_ttl_seconds)
 
 
-async def _ttl_task(interval: float) -> None:
+async def _ttl_task(
+    interval: float,
+) -> None:
     while True:
         await sleep(interval)
         _projects.expire()
 
 
-def _get_project(user_id: str = TokenClaim("id")) -> Project:
+def _get_project(
+    user_id: str = TokenClaim("id"),
+) -> Project:
 
     project = _projects.get(user_id)
 
@@ -54,7 +58,9 @@ def _get_project(user_id: str = TokenClaim("id")) -> Project:
 
 
 @asynccontextmanager
-async def lifespan(server: FastMCP) -> AsyncIterator[None]:
+async def lifespan(
+    server: FastMCP,
+) -> AsyncIterator[None]:
 
     task = create_task(
         _ttl_task(_settings.project_sweep_interval_seconds))
@@ -174,8 +180,14 @@ async def insert_paragraph(
     ),
 )
 async def insert_table(
-    rows: int = Field(gt=0, description="Number of rows."),
-    cols: int = Field(gt=0, description="Number of columns."),
+    rows: int = Field(
+        gt=0, le=50,
+        description="Number of rows."
+    ),
+    cols: int = Field(
+        gt=0, le=10,
+        description="Number of columns."
+    ),
     style: str | None = Field(
         default=None,
         description="Table style name from `list_styles`. None = default.",
@@ -350,8 +362,7 @@ async def remove_blocks(
 
     async with project.lock:
 
-        for i in sorted(set(indices), reverse=True):
-            drop_block(project.document, i)
+        drop_blocks(project.document, indices)
 
         _projects[user_id] = project
 

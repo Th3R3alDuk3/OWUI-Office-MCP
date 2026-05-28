@@ -4,9 +4,10 @@ from pathlib import Path
 from pptx import Presentation
 from pptx.opc.constants import RELATIONSHIP_TYPE
 from pptx.oxml import parse_xml
+from pptx.oxml.presentation import CT_SlideId, CT_SlideIdList
 from pptx.presentation import Presentation as PresentationType
 
-from models.pptx import LayoutInfo, PlaceholderInfo
+from models.pptx import LayoutInfo, PlaceholderInfo, SlideInfo
 
 
 logger = get_logger(__name__)
@@ -66,7 +67,7 @@ def list_layout_infos(
     template_name: str,
     master_index: int,
 ) -> dict[str, LayoutInfo]:
-    
+
     presentation = Presentation(templates_dir.joinpath(template_name))
 
     master = presentation.slide_masters[master_index]
@@ -92,18 +93,41 @@ def list_layout_infos(
     return layout_infos
 
 
-def drop_slide(
+def count_slides(
     presentation: PresentationType,
-    index: int,
+) -> int:
+    return len(presentation.slides)
+
+
+def list_slide_infos(
+    presentation: PresentationType,
+) -> list[SlideInfo]:
+
+    slide_infos: list[SlideInfo] = []
+
+    for slide in presentation.slides:
+
+        texts: list[str] = []
+
+        for shape in slide.shapes:
+            if shape.has_text_frame and shape.text:
+                texts.append(shape.text)
+
+        slide_infos.append(
+            SlideInfo(
+                layout=slide.slide_layout.name,
+                text="\n".join(texts),
+            )
+        )
+
+    return slide_infos
+
+
+def _detach_slide(
+    presentation: PresentationType,
+    slide_id_lst: CT_SlideIdList,
+    slide_id: CT_SlideId,
 ) -> None:
-
-    slide_id_lst = presentation.slides._sldIdLst
-    slide_ids = list(slide_id_lst)
-
-    try:
-        slide_id = slide_ids[index]
-    except IndexError:
-        raise ValueError(f"Slide index {index} out of range.")
 
     if rid := slide_id.get(_RID_ATTR):
         presentation.part.drop_rel(rid)
@@ -111,16 +135,39 @@ def drop_slide(
     slide_id_lst.remove(slide_id)
 
 
+def drop_slides(
+    presentation: PresentationType,
+    indices: list[int],
+) -> None:
+
+    slide_id_lst = presentation.slides._sldIdLst
+    slide_ids = list(slide_id_lst)
+
+    targets = []
+
+    for index in sorted(set(indices)):
+        try:
+            targets.append(slide_ids[index])
+        except IndexError:
+            raise ValueError(f"Slide index {index} out of range.")
+
+    for slide_id in targets:
+        _detach_slide(presentation, slide_id_lst, slide_id)
+
+
 def drop_all_slides(
     presentation: PresentationType,
 ) -> None:
-    while len(presentation.slides._sldIdLst) > 0:
-        drop_slide(presentation, 0)
+
+    slide_id_lst = presentation.slides._sldIdLst
+
+    for slide_id in list(slide_id_lst):
+        _detach_slide(presentation, slide_id_lst, slide_id)
 
 
 def move_slide(
-    presentation: PresentationType, 
-    from_index: int, 
+    presentation: PresentationType,
+    from_index: int,
     to_index: int,
 ) -> None:
 

@@ -119,7 +119,7 @@ def list_block_infos(
 
         elif isinstance(block, Table):
             block_infos.append(
-                BlockInfo(type="table", 
+                BlockInfo(type="table",
                     text=f"{len(block.rows)}x{len(block.columns)} table"))
         else:
             block_infos.append(
@@ -128,21 +128,26 @@ def list_block_infos(
     return block_infos
 
 
-def drop_block(
+def drop_blocks(
     document: DocumentType,
-    index: int,
+    indices: list[int],
 ) -> None:
 
     blocks = _content_blocks(document)
+    body = document.element.body
 
-    try:
-        block = blocks[index]
-    except IndexError:
-        raise ValueError(
-            f"Block index {index} out of range."
-        )
+    targets: list = []
 
-    document.element.body.remove(block)
+    for index in sorted(set(indices)):
+        try:
+            targets.append(blocks[index])
+        except IndexError:
+            raise ValueError(
+                f"Block index {index} out of range."
+            )
+
+    for block in targets:
+        body.remove(block)
 
 
 def drop_all_blocks(

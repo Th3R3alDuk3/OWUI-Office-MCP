@@ -21,6 +21,11 @@ class LayoutInfo(BaseModel):
     placeholders: list[PlaceholderInfo]
 
 
+class SlideInfo(BaseModel):
+    layout: str
+    text: str
+
+
 class DownloadProjectResponse(BaseModel):
     filename: str
     slide_count: int

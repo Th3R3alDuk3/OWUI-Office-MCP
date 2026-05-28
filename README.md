@@ -48,6 +48,7 @@ Jeder Subserver ist unter seiner Dateiendung als Namespace gemounted (`pptx.*`, 
 | 📐 `list_layouts` | Layouts + Placeholders eines Masters |
 | 📁 `create_project` | leeres Projekt aus einem Template |
 | ➕ `insert_slide` | Folie aus einem Layout einfügen (optional an Index, sonst anhängen) |
+| 🔍 `list_slides` | Folien auflisten (Index, Layout, Text) |
 | ✏️ `edit_slide` | Placeholder einer Folie ändern |
 | ↕️ `move_slide` | Folie per Index an neue Position verschieben |
 | 🗑️ `remove_slides` | Folien per Index entfernen |
@@ -63,8 +64,8 @@ Jeder Subserver ist unter seiner Dateiendung als Namespace gemounted (`pptx.*`, 
 | ➕ `insert_paragraph` | Paragraph einfügen (optional an Index, sonst anhängen) |
 | 📊 `insert_table` | Tabelle einfügen (optional mit Zelldaten, optional an Index) |
 | 📃 `insert_page_break` | Seitenumbruch als Body-Block einfügen (optional an Index) |
-| ✏️ `edit_paragraph` | Text eines Paragraphs per Index ändern (Style bleibt) |
 | 🔍 `list_blocks` | Body-Blöcke auflisten (Index, Typ, Text-Preview) |
+| ✏️ `edit_paragraph` | Text eines Paragraphs per Index ändern (Style bleibt) |
 | ↕️ `move_block` | Body-Block (Paragraph & Table) per Index verschieben |
 | 🗑️ `remove_blocks` | Body-Blöcke (Paragraph & Table) per Index entfernen |
 | 💾 `download_project` | Projekt zu OpenWebUI hochladen |

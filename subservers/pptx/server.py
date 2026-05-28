@@ -11,13 +11,15 @@ from pptx import Presentation
 from pydantic import Field
 
 from config import get_settings
-from models.pptx import DownloadProjectResponse, LayoutInfo, Project
+from models.pptx import DownloadProjectResponse, LayoutInfo, Project, SlideInfo
 from services.owui import upload_file
 from subservers.pptx._utils import (
+    count_slides,
     drop_all_slides,
-    drop_slide,
+    drop_slides,
     list_layout_infos,
     list_master_names,
+    list_slide_infos,
     list_template_names,
     move_slide as _move_slide,
 )
@@ -30,16 +32,20 @@ PPTX_MIME = (
 _settings = get_settings()
 
 _projects: TTLCache[str, Project] = TTLCache(
-    maxsize=10_000, ttl=_settings.project_ttl_seconds)
+    maxsize=1_000, ttl=_settings.project_ttl_seconds)
 
 
-async def _ttl_task(interval: float) -> None:
+async def _ttl_task(
+    interval: float,
+) -> None:
     while True:
         await sleep(interval)
         _projects.expire()
 
 
-def _get_project(user_id: str = TokenClaim("id")) -> Project:
+def _get_project(
+    user_id: str = TokenClaim("id"),
+) -> Project:
 
     project = _projects.get(user_id)
 
@@ -50,7 +56,9 @@ def _get_project(user_id: str = TokenClaim("id")) -> Project:
 
 
 @asynccontextmanager
-async def lifespan(server: FastMCP) -> AsyncIterator[None]:
+async def lifespan(
+    server: FastMCP,
+) -> AsyncIterator[None]:
 
     task = create_task(
         _ttl_task(_settings.project_sweep_interval_seconds))
@@ -180,12 +188,27 @@ async def insert_slide(
         if slide_index is not None:
             _move_slide(
                 project.presentation,
-                len(project.presentation.slides) - 1,
+                count_slides(project.presentation) - 1,
                 slide_index,
             )
 
         _projects[user_id] = project
-        return len(project.presentation.slides)
+        return count_slides(project.presentation)
+
+
+@mcp.tool(
+    name="list_slides",
+    description=(
+        "List the current slides in order. The list position is the zero-based "
+        "index; each entry has the layout name and slide text. Use it to target "
+        "`edit_slide`, `move_slide`, or `remove_slides`."
+    ),
+)
+async def list_slides(
+    project: Project = Depends(_get_project),
+) -> list[SlideInfo]:
+    async with project.lock:
+        return list_slide_infos(project.presentation)
 
 
 @mcp.tool(
@@ -243,7 +266,7 @@ async def move_slide(
         _move_slide(project.presentation, from_index, to_index)
 
         _projects[user_id] = project
-        return len(project.presentation.slides)
+        return count_slides(project.presentation)
 
 
 @mcp.tool(
@@ -261,12 +284,11 @@ async def remove_slides(
 
     async with project.lock:
 
-        for i in sorted(set(indices), reverse=True):
-            drop_slide(project.presentation, i)
+        drop_slides(project.presentation, indices)
 
         _projects[user_id] = project
 
-        return len(project.presentation.slides)
+        return count_slides(project.presentation)
 
 
 @mcp.tool(
@@ -294,7 +316,7 @@ async def download_project(
         await to_thread(project.presentation.save, buffer)
 
         _projects[user_id] = project
-        slide_count = len(project.presentation.slides)
+        slide_count = count_slides(project.presentation)
 
     base_url = _settings.owui_base_url.rstrip("/")
 
