@@ -12,6 +12,11 @@ from models.pptx import LayoutInfo, PlaceholderInfo
 logger = get_logger(__name__)
 
 
+_RID_ATTR = (
+    "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
+)
+
+
 def list_template_names(
     templates_dir: Path,
 ) -> list[str]:
@@ -87,21 +92,18 @@ def list_layout_infos(
     return layout_infos
 
 
-_RID_ATTR = (
-    "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
-)
-
-
-def drop_slide(presentation: PresentationType, index: int) -> None:
+def drop_slide(
+    presentation: PresentationType,
+    index: int,
+) -> None:
 
     slide_id_lst = presentation.slides._sldIdLst
+    slide_ids = list(slide_id_lst)
 
     try:
-        slide_id = list(slide_id_lst)[index]
+        slide_id = slide_ids[index]
     except IndexError:
-        raise ValueError(
-            f"Slide index {index} out of range."
-        )
+        raise ValueError(f"Slide index {index} out of range.")
 
     if rid := slide_id.get(_RID_ATTR):
         presentation.part.drop_rel(rid)
@@ -109,6 +111,29 @@ def drop_slide(presentation: PresentationType, index: int) -> None:
     slide_id_lst.remove(slide_id)
 
 
-def drop_all_slides(presentation: PresentationType) -> None:
+def drop_all_slides(
+    presentation: PresentationType,
+) -> None:
     while len(presentation.slides._sldIdLst) > 0:
         drop_slide(presentation, 0)
+
+
+def move_slide(
+    presentation: PresentationType, 
+    from_index: int, 
+    to_index: int,
+) -> None:
+
+    slide_id_lst = presentation.slides._sldIdLst
+    slide_ids = list(slide_id_lst)
+
+    try:
+        sld_id = slide_ids[from_index]
+    except IndexError:
+        raise ValueError(f"Slide index {from_index} out of range.")
+
+    if not -len(slide_ids) <= to_index < len(slide_ids):
+        raise ValueError(f"Target index {to_index} out of range.")
+
+    slide_id_lst.remove(sld_id)
+    slide_id_lst.insert(to_index % len(slide_ids), sld_id)

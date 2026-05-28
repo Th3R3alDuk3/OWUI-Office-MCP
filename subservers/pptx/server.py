@@ -19,6 +19,7 @@ from subservers.pptx._utils import (
     list_layout_infos,
     list_master_names,
     list_template_names,
+    move_slide as _move_slide,
 )
 
 PPTX_MIME = (
@@ -96,7 +97,7 @@ async def list_masters(
     name="list_layouts",
     description=(
         "Step 3: list slide layouts of a master with their placeholders "
-        "(idx, name, type). Then call `create_project` and `append_slide`."
+        "(idx, name, type). Then call `create_project` and `insert_slide`."
     ),
 )
 async def list_layouts(
@@ -111,7 +112,7 @@ async def list_layouts(
     name="create_project",
     description=(
         "Step 4: create an empty in-memory project from a template. Overwrites "
-        "any existing project for the user. Then call `append_slide` per slide."
+        "any existing project for the user. Then call `insert_slide` per slide."
     ),
 )
 async def create_project(
@@ -128,19 +129,27 @@ async def create_project(
 
 
 @mcp.tool(
-    name="append_slide",
+    name="insert_slide",
     description=(
-        "Step 5: append a slide using a layout from `list_layouts`, "
-        "optionally filling text placeholders by `idx`. Repeat per slide, "
-        "then call `download_project`."
+        "Step 5: insert a slide using a layout from `list_layouts`, "
+        "optionally filling text placeholders by `idx`. Without `slide_index` "
+        "the slide is appended; otherwise it is inserted at that zero-based "
+        "position. Repeat per slide, then call `download_project`."
     ),
 )
-async def append_slide(
+async def insert_slide(
     master_index: int = Field(description="From `list_masters`."),
     layout_name: str = Field(description="From `list_layouts`."),
     placeholders: dict[int, str] = Field(
         default_factory=dict,
         description="Placeholder `idx` -> text. Missing keys stay empty.",
+    ),
+    slide_index: int | None = Field(
+        default=None,
+        description=(
+            "Zero-based position to insert at. If omitted, the slide is "
+            "appended at the end."
+        ),
     ),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
@@ -167,6 +176,13 @@ async def append_slide(
         for idx, text in placeholders.items():
             with suppress(KeyError):
                 slide.placeholders[idx].text = text
+
+        if slide_index is not None:
+            _move_slide(
+                project.presentation,
+                len(project.presentation.slides) - 1,
+                slide_index,
+            )
 
         _projects[user_id] = project
         return len(project.presentation.slides)
@@ -202,6 +218,32 @@ async def edit_slide(
                 slide.placeholders[idx].text = text
 
         _projects[user_id] = project
+
+
+@mcp.tool(
+    name="move_slide",
+    description=(
+        "Move a slide to a new position by zero-based index. Negative "
+        "`to_index` counts from the end."
+    ),
+)
+async def move_slide(
+    from_index: int = Field(
+        description="Zero-based current slide index.",
+    ),
+    to_index: int = Field(
+        description="Zero-based target slide index.",
+    ),
+    user_id: str = TokenClaim("id"),
+    project: Project = Depends(_get_project),
+) -> int:
+
+    async with project.lock:
+
+        _move_slide(project.presentation, from_index, to_index)
+
+        _projects[user_id] = project
+        return len(project.presentation.slides)
 
 
 @mcp.tool(
