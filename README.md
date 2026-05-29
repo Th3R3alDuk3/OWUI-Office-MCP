@@ -37,7 +37,7 @@ Läuft als `streamable-http` auf `HOST:PORT` aus der `.env`.
 
 ## 🛠️ Tools
 
-Jeder Subserver ist unter seiner Dateiendung als Namespace gemounted (`pptx.*`, `docx.*`). Per-User State pro Subserver (JWT-Claim `id`), Sliding-TTL, Auto-Sweep — keine Disk-Writes.
+Jeder Subserver ist unter seiner Dateiendung als Namespace gemounted (`pptx_*`, `docx_*`). Per-User State pro Subserver (JWT-Claim `id`), Sliding-TTL, Auto-Sweep — keine Disk-Writes.
 
 ### `pptx` (10)
 
@@ -54,7 +54,7 @@ Jeder Subserver ist unter seiner Dateiendung als Namespace gemounted (`pptx.*`, 
 | `remove_slides` | Folien per Index entfernen |
 | `download_project` | Projekt zu OpenWebUI hochladen |
 
-### `docx` (11)
+### `docx` (10)
 
 | Tool | |
 |---|---|
