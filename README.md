@@ -65,7 +65,6 @@ Jeder Subserver ist unter seiner Dateiendung als Namespace gemounted (`pptx.*`, 
 | `insert_table` | Tabelle einfügen (optional mit Zelldaten, optional an Index) |
 | `insert_page_break` | Seitenumbruch als Body-Block einfügen (optional an Index) |
 | `list_blocks` | Body-Blöcke auflisten (Index, Typ, Text-Preview) |
-| `edit_paragraph` | Text eines Paragraphs per Index ändern (Style bleibt) |
 | `move_block` | Body-Block (Paragraph & Table) per Index verschieben |
 | `remove_blocks` | Body-Blöcke (Paragraph & Table) per Index entfernen |
 | `download_project` | Projekt zu OpenWebUI hochladen |

@@ -6,7 +6,6 @@ from io import BytesIO
 from cachetools import TTLCache
 from docx import Document
 from docx.enum.style import WD_STYLE_TYPE
-from docx.text.paragraph import Paragraph
 from fastmcp import FastMCP
 from fastmcp.dependencies import CurrentAccessToken, Depends, TokenClaim
 from fastmcp.server.auth import AccessToken
@@ -16,7 +15,6 @@ from config import get_settings
 from models.docx import BlockInfo, DownloadProjectResponse, Project, StyleInfo
 from services.owui import upload_file
 from subservers.docx._utils import (
-    content_blocks,
     count_blocks,
     drop_all_blocks,
     drop_blocks,
@@ -141,7 +139,7 @@ async def create_project(
         "that zero-based position. Returns the new block count. After the "
         "user's requested batch of edits is finished, always call "
         "`download_project` exactly once — not after every individual "
-        "insert/edit/move/remove."
+        "insert/move/remove."
     ),
 )
 async def insert_paragraph(
@@ -188,7 +186,7 @@ async def insert_paragraph(
         "`block_index` the table is appended; otherwise it is inserted at that "
         "zero-based position. Returns the new block count. After the user's "
         "requested batch of edits is finished, always call `download_project` "
-        "exactly once — not after every individual insert/edit/move/remove."
+        "exactly once — not after every individual insert/move/remove."
     ),
 )
 async def insert_table(
@@ -252,7 +250,7 @@ async def insert_table(
         "it is appended; otherwise it is inserted at that zero-based position. "
         "Returns the new block count. After the user's requested batch of "
         "edits is finished, always call `download_project` exactly once — not "
-        "after every individual insert/edit/move/remove."
+        "after every individual insert/move/remove."
     ),
 )
 async def insert_page_break(
@@ -284,8 +282,7 @@ async def insert_page_break(
     description=(
         "List the current body blocks in order. The list position is the "
         "zero-based index; each entry has a type (`paragraph` or `table`) and "
-        "a text preview. Use it to target `edit_paragraph`, `move_block`, or "
-        "`remove_blocks`."
+        "a text preview. Use it to target `move_block` or `remove_blocks`."
     ),
 )
 async def list_blocks(
@@ -296,54 +293,13 @@ async def list_blocks(
 
 
 @mcp.tool(
-    name="edit_paragraph",
-    description=(
-        "Update the text of an existing paragraph block by zero-based index, "
-        "keeping its style. Use `list_blocks` to find the index. Only "
-        "paragraphs are editable here, not tables. Changes stay in memory "
-        "only. After the user's requested batch of edits is finished, always "
-        "call `download_project` exactly once — not after every individual "
-        "insert/edit/move/remove."
-    ),
-)
-async def edit_paragraph(
-    block_index: int = Field(
-        description="Zero-based block index."
-    ),
-    text: str = Field(
-        description="New paragraph text."
-    ),
-    user_id: str = TokenClaim("id"),
-    project: Project = Depends(_get_project),
-) -> None:
-
-    async with project.lock:
-
-        try:
-            block = content_blocks(project.document)[block_index]
-        except IndexError:
-            raise ValueError(
-                f"Block index {block_index} out of range."
-            )
-
-        if not isinstance(block, Paragraph):
-            raise ValueError(
-                f"Block {block_index} is not a paragraph."
-            )
-
-        block.text = text
-
-        _touch(user_id, project)
-
-
-@mcp.tool(
     name="move_block",
     description=(
         "Move a body block (paragraph or table) to a new position by "
         "zero-based index. Negative `to_index` counts from the end. Changes "
         "stay in memory only. After the user's requested batch of edits is "
         "finished, always call `download_project` exactly once — not after "
-        "every individual insert/edit/move/remove."
+        "every individual insert/move/remove."
     ),
 )
 async def move_block(
@@ -373,7 +329,7 @@ async def move_block(
         "duplicates are ignored. Changes stay in memory only. After the "
         "user's requested batch of edits is finished, always call "
         "`download_project` exactly once — not after every individual "
-        "insert/edit/move/remove."
+        "insert/move/remove."
     ),
 )
 async def remove_blocks(
@@ -399,7 +355,7 @@ async def remove_blocks(
         "Step 5 — final step after a completed project editing request: "
         "serialize the current project to `.docx` and upload it to OpenWebUI. "
         "Always call this exactly once after the requested batch of inserts, "
-        "edits, moves, or removals is finished. Do not call it after every "
+        "moves, or removals is finished. Do not call it after every "
         "individual change when multiple changes belong to the same request. "
         "The project stays active afterwards, so a later editing request ends "
         "with another single `download_project` call."
@@ -410,9 +366,9 @@ async def download_project(
         min_length=3, max_length=30,
         description="Stem without `.docx`.",
     ),
+    token: AccessToken = CurrentAccessToken(),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
-    token: AccessToken = CurrentAccessToken(),
 ) -> DownloadProjectResponse:
 
     async with project.lock:
