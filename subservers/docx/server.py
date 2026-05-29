@@ -363,7 +363,7 @@ async def remove_blocks(
 )
 async def download_project(
     file_name: str = Field(
-        min_length=3, max_length=30,
+        min_length=6, max_length=60,
         description="Stem without `.docx`.",
     ),
     token: AccessToken = CurrentAccessToken(),
