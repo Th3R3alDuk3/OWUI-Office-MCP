@@ -34,7 +34,6 @@ _settings = get_settings()
 _projects: TTLCache[str, Project] = TTLCache(
     maxsize=1_000, ttl=_settings.project_ttl_seconds)
 
-
 async def _ttl_task(
     interval: float,
 ) -> None:
@@ -150,7 +149,9 @@ async def create_project(
         "Step 5: insert a slide using a layout from `list_layouts`, "
         "optionally filling text placeholders by `idx`. Without `slide_index` "
         "the slide is appended; otherwise it is inserted at that zero-based "
-        "position. Repeat per slide, then call `download_project`."
+        "position. Repeat per slide. After the user's requested batch of "
+        "edits is finished, always call `download_project` exactly once — not "
+        "after every individual insert/edit/move/remove."
     ),
 )
 async def insert_slide(
@@ -222,8 +223,11 @@ async def list_slides(
 @mcp.tool(
     name="edit_slide",
     description=(
-        "Update text placeholders on an existing slide by zero-based index. "
-        "Only listed `idx` keys are touched; others stay as-is."
+        "Update text placeholders on an existing slide by zero-based index "
+        "(from `list_slides`). Only listed `idx` keys are changed; others stay "
+        "as-is. Changes stay in memory only. After the user's requested batch "
+        "of edits is finished, always call `download_project` exactly once — "
+        "not after every individual insert/edit/move/remove."
     ),
 )
 async def edit_slide(
@@ -255,7 +259,10 @@ async def edit_slide(
     name="move_slide",
     description=(
         "Move a slide to a new position by zero-based index. Negative "
-        "`to_index` counts from the end."
+        "`to_index` counts from the end. Changes stay in memory only. After "
+        "the user's requested batch of edits is finished, always call "
+        "`download_project` exactly once — not after every individual "
+        "insert/edit/move/remove."
     ),
 )
 async def move_slide(
@@ -280,8 +287,11 @@ async def move_slide(
 @mcp.tool(
     name="remove_slides",
     description=(
-        "Remove slides by zero-based index. Indices refer to positions "
-        "before removal; duplicates are ignored."
+        "Remove slides by zero-based index (from `list_slides`). Indices refer "
+        "to positions before removal; duplicates are ignored. Changes stay in "
+        "memory only. After the user's requested batch of edits is finished, "
+        "always call `download_project` exactly once — not after every "
+        "individual insert/edit/move/remove."
     ),
 )
 async def remove_slides(
@@ -302,18 +312,23 @@ async def remove_slides(
 @mcp.tool(
     name="download_project",
     description=(
-        "Step 6: serialize the project to `.pptx` and upload it to OpenWebUI. "
-        "The project stays active after saving."
+        "Step 6 — final step after a completed project editing request: "
+        "serialize the current project to `.pptx` and upload it to OpenWebUI. "
+        "Always call this exactly once after the requested batch of inserts, "
+        "edits, moves, or removals is finished. Do not call it after every "
+        "individual change when multiple changes belong to the same request. "
+        "The project stays active afterwards, so a later editing request ends "
+        "with another single `download_project` call."
     ),
 )
 async def download_project(
     file_name: str = Field(
-        min_length=3, max_length=30,
+        min_length=6, max_length=60,
         description="Stem without `.pptx`.",
     ),
+    token: AccessToken = CurrentAccessToken(),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
-    token: AccessToken = CurrentAccessToken(),
 ) -> DownloadProjectResponse:
 
     async with project.lock:

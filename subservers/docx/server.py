@@ -36,7 +36,6 @@ _settings = get_settings()
 _projects: TTLCache[str, Project] = TTLCache(
     maxsize=1_000, ttl=_settings.project_ttl_seconds)
 
-
 async def _ttl_task(
     interval: float,
 ) -> None:
@@ -139,7 +138,10 @@ async def create_project(
         "Step 4a: insert a paragraph. Use a paragraph style from `list_styles` "
         "(e.g. `Heading 1`, `Normal`) to control formatting. Without "
         "`block_index` the paragraph is appended; otherwise it is inserted at "
-        "that zero-based position. Returns the new block count."
+        "that zero-based position. Returns the new block count. After the "
+        "user's requested batch of edits is finished, always call "
+        "`download_project` exactly once — not after every individual "
+        "insert/edit/move/remove."
     ),
 )
 async def insert_paragraph(
@@ -184,7 +186,9 @@ async def insert_paragraph(
         "Step 4b: insert a table with `rows` x `cols` cells. Optionally fill "
         "cells from `data` (row-major; extra rows/cols are ignored). Without "
         "`block_index` the table is appended; otherwise it is inserted at that "
-        "zero-based position. Returns the new block count."
+        "zero-based position. Returns the new block count. After the user's "
+        "requested batch of edits is finished, always call `download_project` "
+        "exactly once — not after every individual insert/edit/move/remove."
     ),
 )
 async def insert_table(
@@ -246,7 +250,9 @@ async def insert_table(
     description=(
         "Step 4c: insert a page break as a body block. Without `block_index` "
         "it is appended; otherwise it is inserted at that zero-based position. "
-        "Returns the new block count."
+        "Returns the new block count. After the user's requested batch of "
+        "edits is finished, always call `download_project` exactly once — not "
+        "after every individual insert/edit/move/remove."
     ),
 )
 async def insert_page_break(
@@ -294,7 +300,10 @@ async def list_blocks(
     description=(
         "Update the text of an existing paragraph block by zero-based index, "
         "keeping its style. Use `list_blocks` to find the index. Only "
-        "paragraphs are editable here, not tables."
+        "paragraphs are editable here, not tables. Changes stay in memory "
+        "only. After the user's requested batch of edits is finished, always "
+        "call `download_project` exactly once — not after every individual "
+        "insert/edit/move/remove."
     ),
 )
 async def edit_paragraph(
@@ -331,7 +340,10 @@ async def edit_paragraph(
     name="move_block",
     description=(
         "Move a body block (paragraph or table) to a new position by "
-        "zero-based index. Negative `to_index` counts from the end."
+        "zero-based index. Negative `to_index` counts from the end. Changes "
+        "stay in memory only. After the user's requested batch of edits is "
+        "finished, always call `download_project` exactly once — not after "
+        "every individual insert/edit/move/remove."
     ),
 )
 async def move_block(
@@ -356,8 +368,12 @@ async def move_block(
 @mcp.tool(
     name="remove_blocks",
     description=(
-        "Remove body blocks (paragraphs and tables) by zero-based index. "
-        "Indices refer to positions before removal; duplicates are ignored."
+        "Remove body blocks (paragraphs and tables) by zero-based index "
+        "(from `list_blocks`). Indices refer to positions before removal; "
+        "duplicates are ignored. Changes stay in memory only. After the "
+        "user's requested batch of edits is finished, always call "
+        "`download_project` exactly once — not after every individual "
+        "insert/edit/move/remove."
     ),
 )
 async def remove_blocks(
@@ -380,8 +396,13 @@ async def remove_blocks(
 @mcp.tool(
     name="download_project",
     description=(
-        "Step 5: serialize the project to `.docx` and upload it to OpenWebUI. "
-        "The project stays active after saving."
+        "Step 5 — final step after a completed project editing request: "
+        "serialize the current project to `.docx` and upload it to OpenWebUI. "
+        "Always call this exactly once after the requested batch of inserts, "
+        "edits, moves, or removals is finished. Do not call it after every "
+        "individual change when multiple changes belong to the same request. "
+        "The project stays active afterwards, so a later editing request ends "
+        "with another single `download_project` call."
     ),
 )
 async def download_project(
