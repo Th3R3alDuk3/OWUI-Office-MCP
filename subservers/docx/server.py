@@ -363,7 +363,7 @@ async def remove_blocks(
 )
 async def download_project(
     file_name: str = Field(
-        min_length=6, max_length=60,
+        min_length=1, max_length=60,
         description="Stem without `.docx`.",
     ),
     token: AccessToken = CurrentAccessToken(),
@@ -373,7 +373,7 @@ async def download_project(
 
     async with project.lock:
 
-        out_name = f"{file_name.strip()}.docx"
+        out_name = f"{file_name}.docx"
 
         buffer = BytesIO()
         await to_thread(project.document.save, buffer)

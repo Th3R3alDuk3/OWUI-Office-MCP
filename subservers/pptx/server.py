@@ -323,7 +323,7 @@ async def remove_slides(
 )
 async def download_project(
     file_name: str = Field(
-        min_length=6, max_length=60,
+        min_length=1, max_length=60,
         description="Stem without `.pptx`.",
     ),
     token: AccessToken = CurrentAccessToken(),
@@ -333,7 +333,7 @@ async def download_project(
 
     async with project.lock:
 
-        out_name = f"{file_name.strip()}.pptx"
+        out_name = f"{file_name}.pptx"
 
         buffer = BytesIO()
         await to_thread(project.presentation.save, buffer)
