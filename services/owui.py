@@ -27,8 +27,7 @@ async def upload_file(
 
     except HTTPStatusError as error:
         raise RuntimeError(
-            f"OpenWebUI rejected the upload."
-            f" Detail: {error}"
+            f"OpenWebUI rejected the upload. Detail: {error}"
         ) from error
     except RequestError as error:
         raise RuntimeError(

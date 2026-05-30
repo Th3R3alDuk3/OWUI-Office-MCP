@@ -1,6 +1,6 @@
 # OWUI-Office-MCP
 
-> Office-Dokumente via MCP für OpenWebUI. Schlank, modern, erweiterbar.
+> Office documents via MCP for OpenWebUI. Lean, modern, extensible.
 
 ⚡ FastMCP &nbsp;·&nbsp; 📦 uv &nbsp;·&nbsp; 🔐 JWT (HS256) &nbsp;·&nbsp; 🌐 streamable-http
 
@@ -12,7 +12,6 @@
 |---|---|---|
 | PowerPoint | `.pptx` | ✅ |
 | Word | `.docx` | ✅ |
-| Excel | `.xlsx` | 🚧 |
 
 ## 🚀 Setup
 
@@ -21,11 +20,11 @@ uv sync
 cp .env.example .env
 ```
 
-In der `.env`:
-- `JWT_SECRET` → OpenWebUIs `WEBUI_SECRET_KEY`
-- `OWUI_BASE_URL` → z.B. `http://localhost:3000` (vom MCP-Server aus erreichbar)
+In `.env`:
+- `JWT_SECRET` → OpenWebUI's `WEBUI_SECRET_KEY`
+- `OWUI_BASE_URL` → e.g. `http://localhost:3000` (reachable from the MCP server)
 
-Templates in 📁 [templates/](templates/) ablegen.
+Place templates in 📁 [templates/](templates/).
 
 ## ▶️ Run
 
@@ -33,38 +32,38 @@ Templates in 📁 [templates/](templates/) ablegen.
 uv run python main.py
 ```
 
-Läuft als `streamable-http` auf `HOST:PORT` aus der `.env`.
+Runs as `streamable-http` on `HOST:PORT` from `.env`.
 
 ## 🛠️ Tools
 
-Jeder Subserver ist unter seiner Dateiendung als Namespace gemounted (`pptx_*`, `docx_*`). Per-User State pro Subserver (JWT-Claim `id`), Sliding-TTL, Auto-Sweep — keine Disk-Writes.
+Each subserver is mounted under its file extension as a namespace (`pptx_*`, `docx_*`). Per-user state per subserver (JWT claim `id`), sliding TTL, auto-sweep — no disk writes.
 
 ### `pptx` (10)
 
 | Tool | |
 |---|---|
-| `list_templates` | verfügbare `.pptx` Templates |
-| `list_masters` | Slide Masters eines Templates |
-| `list_layouts` | Layouts + Placeholders eines Masters |
-| `create_project` | leeres Projekt aus einem Template |
-| `insert_slide` | Folie aus einem Layout einfügen (optional an Index, sonst anhängen) |
-| `list_slides` | Folien auflisten (Index, Layout, Text) |
-| `edit_slide` | Placeholder einer Folie ändern |
-| `move_slide` | Folie per Index an neue Position verschieben |
-| `remove_slides` | Folien per Index entfernen |
-| `download_project` | Projekt zu OpenWebUI hochladen |
+| `list_templates` | available `.pptx` templates |
+| `list_masters` | slide masters of a template |
+| `list_layouts` | layouts + placeholders of a master |
+| `create_project` | empty project from a template |
+| `insert_slide` | insert a slide from a layout (optionally at an index, otherwise append) |
+| `list_slides` | list slides (index, layout, text) |
+| `edit_slide` | update placeholders of a slide |
+| `move_slide` | move a slide to a new position by index |
+| `remove_slides` | remove slides by index |
+| `download_project` | upload the project to OpenWebUI |
 
 ### `docx` (10)
 
 | Tool | |
 |---|---|
-| `list_templates` | verfügbare `.docx` Templates |
-| `list_styles` | Paragraph- und Table-Styles eines Templates |
-| `create_project` | leeres Projekt aus einem Template |
-| `insert_paragraph` | Paragraph einfügen (optional an Index, sonst anhängen) |
-| `insert_table` | Tabelle einfügen (optional mit Zelldaten, optional an Index) |
-| `insert_page_break` | Seitenumbruch als Body-Block einfügen (optional an Index) |
-| `list_blocks` | Body-Blöcke auflisten (Index, Typ, Text-Preview) |
-| `move_block` | Body-Block (Paragraph & Table) per Index verschieben |
-| `remove_blocks` | Body-Blöcke (Paragraph & Table) per Index entfernen |
-| `download_project` | Projekt zu OpenWebUI hochladen |
+| `list_templates` | available `.docx` templates |
+| `list_styles` | paragraph and table styles of a template |
+| `create_project` | empty project from a template |
+| `insert_paragraph` | insert a paragraph (optionally at an index, otherwise append) |
+| `insert_table` | insert a table (optionally with cell data, optionally at an index) |
+| `insert_page_break` | insert a page break as a body block (optionally at an index) |
+| `list_blocks` | list body blocks (index, type, text preview) |
+| `move_block` | move a body block (paragraph & table) by index |
+| `remove_blocks` | remove body blocks (paragraph & table) by index |
+| `download_project` | upload the project to OpenWebUI |
