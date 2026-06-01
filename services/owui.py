@@ -34,3 +34,32 @@ async def upload_file(
             f"Could not reach OpenWebUI at {base_url}."
             f" Detail: {error}"
         ) from error
+
+
+async def download_file(
+    file_id: str,
+    token: str,
+    base_url: str,
+) -> bytes:
+
+    try:
+
+        async with AsyncClient(verify=False) as client:
+            response = await client.get(
+                url=f"{base_url}/api/v1/files/{file_id}/content",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        response.raise_for_status()
+
+        return response.content
+
+    except HTTPStatusError as error:
+        raise RuntimeError(
+            f"OpenWebUI rejected the download. Detail: {error}"
+        ) from error
+    except RequestError as error:
+        raise RuntimeError(
+            f"Could not reach OpenWebUI at {base_url}."
+            f" Detail: {error}"
+        ) from error

@@ -13,7 +13,7 @@ from pydantic import Field
 
 from config import get_settings
 from models.docx import BlockInfo, DownloadProjectResponse, Project, StyleInfo
-from services.owui import upload_file
+from services.owui import download_file, upload_file
 from subservers.docx._utils import (
     count_blocks,
     drop_all_blocks,
@@ -126,6 +126,32 @@ async def create_project(
 
     document = await to_thread(Document, template_file)
     drop_all_blocks(document)
+
+    _projects[user_id] = Project(document=document)
+
+
+@mcp.tool(
+    name="open_project",
+    description=(
+        "Step 3: Open an existing project from OpenWebUI `file_id`. "
+        "Overwrites any existing project for the user."
+    ),
+)
+async def open_project(
+    file_id: str = Field(description="File ID from OpenWebUI."),
+    token: AccessToken = CurrentAccessToken(),
+    user_id: str = TokenClaim("id"),
+) -> None:
+
+    base_url = _settings.owui_base_url.rstrip("/")
+
+    file_content = await download_file(
+        file_id=file_id,
+        token=token.token,
+        base_url=base_url,
+    )
+
+    document = await to_thread(Document, BytesIO(file_content))
 
     _projects[user_id] = Project(document=document)
 

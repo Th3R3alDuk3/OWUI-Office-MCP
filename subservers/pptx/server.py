@@ -12,7 +12,7 @@ from pydantic import Field
 
 from config import get_settings
 from models.pptx import DownloadProjectResponse, LayoutInfo, Project, SlideInfo
-from services.owui import upload_file
+from services.owui import download_file, upload_file
 from subservers.pptx._utils import (
     count_slides,
     drop_all_slides,
@@ -139,6 +139,32 @@ async def create_project(
 
     presentation = await to_thread(Presentation, template_file)
     drop_all_slides(presentation)
+
+    _projects[user_id] = Project(presentation=presentation)
+
+
+@mcp.tool(
+    name="open_project",
+    description=(
+        "Step 4: Open an existing project from OpenWebUI `file_id`. "
+        "Overwrites any existing project for the user."
+    ),
+)
+async def open_project(
+    file_id: str = Field(description="File ID from OpenWebUI."),
+    token: AccessToken = CurrentAccessToken(),
+    user_id: str = TokenClaim("id"),
+) -> None:
+
+    base_url = _settings.owui_base_url.rstrip("/")
+
+    file_content = await download_file(
+        file_id=file_id,
+        token=token.token,
+        base_url=base_url,
+    )
+
+    presentation = await to_thread(Presentation, BytesIO(file_content))
 
     _projects[user_id] = Project(presentation=presentation)
 
