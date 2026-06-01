@@ -23,7 +23,15 @@ class LayoutInfo(BaseModel):
 
 class PlaceholderText(BaseModel):
     idx: int = Field(description="Placeholder `idx` from `list_layouts`.")
-    text: str = Field(description="Text for this placeholder.")
+    text: str = Field(
+        description=(
+            "Plain text for this placeholder. Separate lines / bullet items "
+            "with `\\n` — the template renders bullets and numbering "
+            "automatically. Do NOT prefix lines with bullet glyphs, dashes, "
+            "asterisks, or numbers (e.g. `•`, `-`, `*`, `1.`); write the bare "
+            "text only."
+        ),
+    )
 
 
 class SlideInfo(BaseModel):
