@@ -67,9 +67,9 @@ mcp = FastMCP(name="pptx")
 @mcp.tool(
     name="list_templates",
     description=(
-        "Step 1 (no input file): list available templates. Pick one, then "
-        "call `create_project`. If the user provided a file, call "
-        "`open_project` instead."
+        "List the available templates. Use this when the user did NOT attach "
+        "a file, then pick one for `create_project`. If the user attached a "
+        "file, use `open_project` instead."
     ),
 )
 async def list_templates() -> list[str]:
@@ -80,15 +80,23 @@ async def list_templates() -> list[str]:
 @mcp.tool(
     name="create_project",
     description=(
-        "Step 2 (template branch): create an empty in-memory project from a "
-        "template. Overwrites any existing project for the user. Skip if you "
-        "used `open_project`. Then call `list_masters`."
+        "Create a new, empty in-memory project from a template. Use this by "
+        "default when the user did NOT attach a file. Overwrites any existing "
+        "project for the user. Then call `list_masters`."
     ),
 )
 async def create_project(
     template_name: str = Field(description="From `list_templates`."),
     user_id: str = TokenClaim("id"),
 ) -> None:
+
+    templates = await to_thread(list_template_names, _settings.templates_dir)
+
+    if template_name not in templates:
+        raise ValueError(
+            f"Template '{template_name}' not found. "
+            "Pick one from `list_templates`."
+        )
 
     template_file = _settings.templates_dir.joinpath(template_name)
 
@@ -101,23 +109,28 @@ async def create_project(
 @mcp.tool(
     name="open_project",
     description=(
-        "Step 1 (input-file branch): open an existing `.pptx` from OpenWebUI "
-        "`file_id`. Overwrites any existing project for the user. Then call "
-        "`list_masters` to add slides, or `list_slides` to edit existing ones."
+        "Open a `.pptx` the user attached in OpenWebUI, by its `file_id`. Use "
+        "only when the user actually attached a file; if none was given, use "
+        "`create_project` instead. Overwrites any existing project for the "
+        "user. Then call `list_masters` to add slides, or `list_slides` to "
+        "edit existing ones."
     ),
 )
 async def open_project(
-    file_id: str = Field(description="File ID from OpenWebUI."),
+    file_id: str = Field(
+        description=(
+            "OpenWebUI file ID of the file the user attached. NOT a template "
+            "name from `list_templates`, and never invented."
+        ),
+    ),
     token: AccessToken = CurrentAccessToken(),
     user_id: str = TokenClaim("id"),
 ) -> None:
 
-    base_url = _settings.owui_base_url
-
     file_content = await download_file(
         file_id=file_id,
         token=token.token,
-        base_url=base_url,
+        base_url=_settings.owui_base_url,
     )
 
     try:
@@ -133,8 +146,8 @@ async def open_project(
 @mcp.tool(
     name="list_masters",
     description=(
-        "Step 3: list the slide masters of the current project. Pick one, "
-        "then call `list_layouts`."
+        "List the slide masters of the current project. Pick one, then call "
+        "`list_layouts`."
     ),
 )
 async def list_masters(
@@ -147,8 +160,8 @@ async def list_masters(
 @mcp.tool(
     name="list_layouts",
     description=(
-        "Step 4: list the layouts of a master with their placeholders "
-        "(idx, name, type). Then call `insert_slide`."
+        "List the layouts of a master with their placeholders (idx, name, "
+        "type). Then call `insert_slide`."
     ),
 )
 async def list_layouts(
@@ -165,12 +178,11 @@ async def list_layouts(
 @mcp.tool(
     name="insert_slide",
     description=(
-        "Step 5: insert a slide using a layout from `list_layouts`, "
-        "optionally filling text placeholders by `idx`. Without `slide_index` "
-        "the slide is appended; otherwise it is inserted at that zero-based "
-        "position. Repeat per slide. After the user's requested batch of "
-        "edits is finished, always call `download_project` exactly once — not "
-        "after every individual insert/edit/move/remove."
+        "Insert a slide using a layout from `list_layouts`, optionally "
+        "filling text placeholders by `idx`. Without `slide_index` the slide "
+        "is appended; otherwise it is inserted at that zero-based position. "
+        "After the requested batch of edits, call `download_project` once "
+        "(not after each change)."
     ),
 )
 async def insert_slide(
@@ -244,9 +256,8 @@ async def list_slides(
     description=(
         "Update text placeholders on an existing slide by zero-based index "
         "(from `list_slides`). Only the listed `idx` are changed; others stay "
-        "as-is. Changes stay in memory only. After the user's requested batch "
-        "of edits is finished, always call `download_project` exactly once — "
-        "not after every individual insert/edit/move/remove."
+        "as-is. Changes stay in memory only. After the requested batch of "
+        "edits, call `download_project` once (not after each change)."
     ),
 )
 async def edit_slide(
@@ -279,9 +290,8 @@ async def edit_slide(
     description=(
         "Move a slide to a new position by zero-based index. Negative "
         "`to_index` counts from the end. Changes stay in memory only. After "
-        "the user's requested batch of edits is finished, always call "
-        "`download_project` exactly once — not after every individual "
-        "insert/edit/move/remove."
+        "the requested batch of edits, call `download_project` once (not "
+        "after each change)."
     ),
 )
 async def move_slide(
@@ -308,9 +318,8 @@ async def move_slide(
     description=(
         "Remove slides by zero-based index (from `list_slides`). Indices refer "
         "to positions before removal; duplicates are ignored. Changes stay in "
-        "memory only. After the user's requested batch of edits is finished, "
-        "always call `download_project` exactly once — not after every "
-        "individual insert/edit/move/remove."
+        "memory only. After the requested batch of edits, call "
+        "`download_project` once (not after each change)."
     ),
 )
 async def remove_slides(
@@ -331,13 +340,11 @@ async def remove_slides(
 @mcp.tool(
     name="download_project",
     description=(
-        "Step 6 — final step after a completed project editing request: "
-        "serialize the current project to `.pptx` and upload it to OpenWebUI. "
-        "Always call this exactly once after the requested batch of inserts, "
-        "edits, moves, or removals is finished. Do not call it after every "
-        "individual change when multiple changes belong to the same request. "
-        "The project stays active afterwards, so a later editing request ends "
-        "with another single `download_project` call."
+        "Final step of an edit batch: serialize the current project to "
+        "`.pptx` and upload it to OpenWebUI. Call exactly once after the "
+        "requested batch of changes, not after each one. The project stays "
+        "active afterwards, so a later edit batch ends with another single "
+        "`download_project` call."
     ),
 )
 async def download_project(
@@ -360,18 +367,18 @@ async def download_project(
         _store.touch(user_id, project)
         slide_count = count_slides(project.presentation)
 
-    base_url = _settings.owui_base_url
-
     uploaded = await upload_file(
         filename=out_name,
         data=buffer.getvalue(),
         content_type=PPTX_MIME,
         token=token.token,
-        base_url=base_url,
+        base_url=_settings.owui_base_url,
     )
 
     return DownloadProjectResponse(
         filename=out_name,
         slide_count=slide_count,
-        owui_url=f"{base_url}/api/v1/files/{uploaded.id}/content",
+        owui_url=(
+            f"{_settings.owui_base_url}/api/v1/files/{uploaded.id}/content"
+        ),
     )

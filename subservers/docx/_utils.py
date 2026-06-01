@@ -14,9 +14,10 @@ logger = get_logger(__name__)
 
 
 _W_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
-_SECT_PR = f"{_W_NS}sectPr"
+
 _P = f"{_W_NS}p"
 _TBL = f"{_W_NS}tbl"
+_SECT_PR = f"{_W_NS}sectPr"
 
 _RELEVANT_STYLE_TYPES = {
     WD_STYLE_TYPE.PARAGRAPH,

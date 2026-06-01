@@ -60,9 +60,9 @@ mcp = FastMCP(name="docx")
 @mcp.tool(
     name="list_templates",
     description=(
-        "Step 1 (no input file): list available templates. Pick one, then "
-        "call `create_project`. If the user provided a file, call "
-        "`open_project` instead."
+        "List the available templates. Use this when the user did NOT attach "
+        "a file, then pick one for `create_project`. If the user attached a "
+        "file, use `open_project` instead."
     ),
 )
 async def list_templates() -> list[str]:
@@ -73,15 +73,23 @@ async def list_templates() -> list[str]:
 @mcp.tool(
     name="create_project",
     description=(
-        "Step 2 (template branch): create an empty in-memory project from a "
-        "template. Overwrites any existing project for the user. Skip if you "
-        "used `open_project`. Then call `list_styles`."
+        "Create a new, empty in-memory project from a template. Use this by "
+        "default when the user did NOT attach a file. Overwrites any existing "
+        "project for the user. Then call `list_styles`."
     ),
 )
 async def create_project(
     template_name: str = Field(description="From `list_templates`."),
     user_id: str = TokenClaim("id"),
 ) -> None:
+
+    templates = await to_thread(list_template_names, _settings.templates_dir)
+
+    if template_name not in templates:
+        raise ValueError(
+            f"Template '{template_name}' not found. "
+            "Pick one from `list_templates`."
+        )
 
     template_file = _settings.templates_dir.joinpath(template_name)
 
@@ -94,23 +102,28 @@ async def create_project(
 @mcp.tool(
     name="open_project",
     description=(
-        "Step 1 (input-file branch): open an existing `.docx` from OpenWebUI "
-        "`file_id`. Overwrites any existing project for the user. Then call "
-        "`list_styles` to add blocks, or `list_blocks` to edit existing ones."
+        "Open a `.docx` the user attached in OpenWebUI, by its `file_id`. Use "
+        "only when the user actually attached a file; if none was given, use "
+        "`create_project` instead. Overwrites any existing project for the "
+        "user. Then call `list_styles` to add blocks, or `list_blocks` to "
+        "edit existing ones."
     ),
 )
 async def open_project(
-    file_id: str = Field(description="File ID from OpenWebUI."),
+    file_id: str = Field(
+        description=(
+            "OpenWebUI file ID of the file the user attached. NOT a template "
+            "name from `list_templates`, and never invented."
+        ),
+    ),
     token: AccessToken = CurrentAccessToken(),
     user_id: str = TokenClaim("id"),
 ) -> None:
 
-    base_url = _settings.owui_base_url
-
     file_content = await download_file(
         file_id=file_id,
         token=token.token,
-        base_url=base_url,
+        base_url=_settings.owui_base_url,
     )
 
     try:
@@ -126,9 +139,8 @@ async def open_project(
 @mcp.tool(
     name="list_styles",
     description=(
-        "Step 3: list the paragraph and table styles of the current project "
-        "(name -> type, builtin). Then call `insert_paragraph` / "
-        "`insert_table`."
+        "List the paragraph and table styles of the current project (name -> "
+        "type, builtin). Then call `insert_paragraph` / `insert_table`."
     ),
 )
 async def list_styles(
@@ -141,13 +153,12 @@ async def list_styles(
 @mcp.tool(
     name="insert_paragraph",
     description=(
-        "Step 4a: insert a paragraph. Use a paragraph style from `list_styles` "
-        "(e.g. `Heading 1`, `Normal`) to control formatting. Without "
-        "`block_index` the paragraph is appended; otherwise it is inserted at "
-        "that zero-based position. Returns the new block count. After the "
-        "user's requested batch of edits is finished, always call "
-        "`download_project` exactly once — not after every individual "
-        "insert/move/remove."
+        "Insert a paragraph. Use a paragraph style from `list_styles` (e.g. "
+        "`Heading 1`, `Normal`) to control formatting. Without `block_index` "
+        "the paragraph is appended; otherwise it is inserted at that "
+        "zero-based position. Returns the new block count. After the "
+        "requested batch of edits, call `download_project` once (not after "
+        "each change)."
     ),
 )
 async def insert_paragraph(
@@ -189,12 +200,12 @@ async def insert_paragraph(
 @mcp.tool(
     name="insert_table",
     description=(
-        "Step 4b: insert a table with `rows` x `cols` cells. Optionally fill "
-        "cells from `data` (row-major; extra rows/cols are ignored). Without "
-        "`block_index` the table is appended; otherwise it is inserted at that "
-        "zero-based position. Returns the new block count. After the user's "
-        "requested batch of edits is finished, always call `download_project` "
-        "exactly once — not after every individual insert/move/remove."
+        "Insert a table with `rows` x `cols` cells. Optionally fill cells "
+        "from `data` (row-major; extra rows/cols are ignored). Without "
+        "`block_index` the table is appended; otherwise it is inserted at "
+        "that zero-based position. Returns the new block count. After the "
+        "requested batch of edits, call `download_project` once (not after "
+        "each change)."
     ),
 )
 async def insert_table(
@@ -254,11 +265,10 @@ async def insert_table(
 @mcp.tool(
     name="insert_page_break",
     description=(
-        "Step 4c: insert a page break as a body block. Without `block_index` "
-        "it is appended; otherwise it is inserted at that zero-based position. "
-        "Returns the new block count. After the user's requested batch of "
-        "edits is finished, always call `download_project` exactly once — not "
-        "after every individual insert/move/remove."
+        "Insert a page break as a body block. Without `block_index` it is "
+        "appended; otherwise it is inserted at that zero-based position. "
+        "Returns the new block count. After the requested batch of edits, "
+        "call `download_project` once (not after each change)."
     ),
 )
 async def insert_page_break(
@@ -305,9 +315,8 @@ async def list_blocks(
     description=(
         "Move a body block (paragraph or table) to a new position by "
         "zero-based index. Negative `to_index` counts from the end. Changes "
-        "stay in memory only. After the user's requested batch of edits is "
-        "finished, always call `download_project` exactly once — not after "
-        "every individual insert/move/remove."
+        "stay in memory only. After the requested batch of edits, call "
+        "`download_project` once (not after each change)."
     ),
 )
 async def move_block(
@@ -335,9 +344,8 @@ async def move_block(
         "Remove body blocks (paragraphs and tables) by zero-based index "
         "(from `list_blocks`). Indices refer to positions before removal; "
         "duplicates are ignored. Changes stay in memory only. After the "
-        "user's requested batch of edits is finished, always call "
-        "`download_project` exactly once — not after every individual "
-        "insert/move/remove."
+        "requested batch of edits, call `download_project` once (not after "
+        "each change)."
     ),
 )
 async def remove_blocks(
@@ -360,13 +368,11 @@ async def remove_blocks(
 @mcp.tool(
     name="download_project",
     description=(
-        "Step 5 — final step after a completed project editing request: "
-        "serialize the current project to `.docx` and upload it to OpenWebUI. "
-        "Always call this exactly once after the requested batch of inserts, "
-        "moves, or removals is finished. Do not call it after every "
-        "individual change when multiple changes belong to the same request. "
-        "The project stays active afterwards, so a later editing request ends "
-        "with another single `download_project` call."
+        "Final step of an edit batch: serialize the current project to "
+        "`.docx` and upload it to OpenWebUI. Call exactly once after the "
+        "requested batch of changes, not after each one. The project stays "
+        "active afterwards, so a later edit batch ends with another single "
+        "`download_project` call."
     ),
 )
 async def download_project(
@@ -389,18 +395,18 @@ async def download_project(
         _store.touch(user_id, project)
         block_count = count_blocks(project.document)
 
-    base_url = _settings.owui_base_url
-
     uploaded = await upload_file(
         filename=out_name,
         data=buffer.getvalue(),
         content_type=DOCX_MIME,
         token=token.token,
-        base_url=base_url,
+        base_url=_settings.owui_base_url,
     )
 
     return DownloadProjectResponse(
         filename=out_name,
         block_count=block_count,
-        owui_url=f"{base_url}/api/v1/files/{uploaded.id}/content",
+        owui_url=(
+            f"{_settings.owui_base_url}/api/v1/files/{uploaded.id}/content"
+        ),
     )
