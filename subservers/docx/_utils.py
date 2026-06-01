@@ -1,4 +1,3 @@
-from fastmcp.utilities.logging import get_logger
 from pathlib import Path
 
 from docx import Document
@@ -6,6 +5,7 @@ from docx.document import Document as DocumentType
 from docx.enum.style import WD_STYLE_TYPE
 from docx.table import Table
 from docx.text.paragraph import Paragraph
+from fastmcp.utilities.logging import get_logger
 
 from models.docx import BlockInfo, StyleInfo
 
@@ -67,13 +67,13 @@ def _content_blocks(
     document: DocumentType,
 ) -> list:
 
-    childs: list = []
+    children: list = []
 
     for child in document.element.body:
         if child.tag != _SECT_PR:
-            childs.append(child)
+            children.append(child)
 
-    return childs
+    return children
 
 
 def count_blocks(
@@ -141,7 +141,7 @@ def drop_blocks(
         except IndexError:
             raise ValueError(
                 f"Block index {index} out of range."
-            )
+            ) from None
 
     for block in targets:
         body.remove(block)
@@ -166,7 +166,9 @@ def move_block(
     try:
         block = blocks[from_index]
     except IndexError:
-        raise ValueError(f"Block index {from_index} out of range.")
+        raise ValueError(
+            f"Block index {from_index} out of range."
+        ) from None
 
     if not -len(blocks) <= to_index < len(blocks):
         raise ValueError(f"Target index {to_index} out of range.")

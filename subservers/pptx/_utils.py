@@ -1,6 +1,6 @@
-from fastmcp.utilities.logging import get_logger
 from pathlib import Path
 
+from fastmcp.utilities.logging import get_logger
 from pptx import Presentation
 from pptx.opc.constants import RELATIONSHIP_TYPE
 from pptx.oxml import parse_xml
@@ -143,7 +143,9 @@ def drop_slides(
         try:
             targets.append(slide_ids[index])
         except IndexError:
-            raise ValueError(f"Slide index {index} out of range.")
+            raise ValueError(
+                f"Slide index {index} out of range."
+            ) from None
 
     for slide_id in targets:
         _detach_slide(presentation, slide_id_lst, slide_id)
@@ -171,7 +173,9 @@ def move_slide(
     try:
         sld_id = slide_ids[from_index]
     except IndexError:
-        raise ValueError(f"Slide index {from_index} out of range.")
+        raise ValueError(
+            f"Slide index {from_index} out of range."
+        ) from None
 
     if not -len(slide_ids) <= to_index < len(slide_ids):
         raise ValueError(f"Target index {to_index} out of range.")

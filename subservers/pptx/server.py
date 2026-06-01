@@ -1,10 +1,8 @@
-from asyncio import CancelledError, create_task, sleep, to_thread
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager, suppress
+from asyncio import to_thread
+from contextlib import suppress
 from io import BytesIO
 from zipfile import BadZipFile
 
-from cachetools import TTLCache
 from fastmcp import FastMCP
 from fastmcp.dependencies import CurrentAccessToken, Depends, TokenClaim
 from fastmcp.server.auth import AccessToken
@@ -20,6 +18,7 @@ from models.pptx import (
     SlideInfo,
 )
 from services.owui import download_file, upload_file
+from subservers._store import ProjectStore
 from subservers.pptx._utils import (
     count_slides,
     drop_all_slides,
@@ -38,22 +37,20 @@ PPTX_MIME = (
 
 _settings = get_settings()
 
-_projects: TTLCache[str, Project] = TTLCache(
-    maxsize=1_000, ttl=_settings.project_ttl_seconds)
+_store = ProjectStore(
+    max_size=1_000,
+    ttl=_settings.project_ttl_seconds,
+    sweep_interval=_settings.project_sweep_interval_seconds,
+)
 
-async def _ttl_task(
-    interval: float,
-) -> None:
-    while True:
-        await sleep(interval)
-        _projects.expire()
+lifespan = _store.lifespan
 
 
 def _get_project(
     user_id: str = TokenClaim("id"),
 ) -> Project:
 
-    project = _projects.get(user_id)
+    project = _store.get(user_id)
 
     if project is None:
         raise ValueError(
@@ -62,32 +59,6 @@ def _get_project(
         )
 
     return project
-
-
-def _touch(
-    user_id: str,
-    project: Project,
-) -> None:
-    if _projects.get(user_id) is project:
-        _projects[user_id] = project
-
-
-@asynccontextmanager
-async def lifespan(
-    server: FastMCP,
-) -> AsyncIterator[None]:
-
-    task = create_task(
-        _ttl_task(_settings.project_sweep_interval_seconds))
-
-    try:
-        yield
-    finally:
-
-        task.cancel()
-
-        with suppress(CancelledError):
-            await task
 
 
 mcp = FastMCP(name="pptx")
@@ -124,7 +95,7 @@ async def create_project(
     presentation = await to_thread(Presentation, template_file)
     drop_all_slides(presentation)
 
-    _projects[user_id] = Project(presentation=presentation)
+    _store.set(user_id, Project(presentation=presentation))
 
 
 @mcp.tool(
@@ -141,7 +112,7 @@ async def open_project(
     user_id: str = TokenClaim("id"),
 ) -> None:
 
-    base_url = _settings.owui_base_url.rstrip("/")
+    base_url = _settings.owui_base_url
 
     file_content = await download_file(
         file_id=file_id,
@@ -156,7 +127,7 @@ async def open_project(
             f"File '{file_id}' is not a valid `.pptx` presentation."
         ) from error
 
-    _projects[user_id] = Project(presentation=presentation)
+    _store.set(user_id, Project(presentation=presentation))
 
 
 @mcp.tool(
@@ -188,7 +159,7 @@ async def list_layouts(
         try:
             return list_layout_infos(project.presentation, master_index)
         except IndexError:
-            raise ValueError(f"Master '{master_index}' not found.")
+            raise ValueError(f"Master '{master_index}' not found.") from None
 
 
 @mcp.tool(
@@ -227,7 +198,7 @@ async def insert_slide(
         except IndexError:
             raise ValueError(
                 f"Master '{master_index}' not found."
-            )
+            ) from None
 
         layout = master.slide_layouts.get_by_name(layout_name)
 
@@ -249,7 +220,7 @@ async def insert_slide(
                 slide_index,
             )
 
-        _touch(user_id, project)
+        _store.touch(user_id, project)
         return count_slides(project.presentation)
 
 
@@ -294,13 +265,13 @@ async def edit_slide(
         except IndexError:
             raise ValueError(
                 f"Slide index {slide_index} out of range."
-            )
+            ) from None
 
         for placeholder in placeholders:
             with suppress(KeyError):
                 slide.placeholders[placeholder.idx].text = placeholder.text
 
-        _touch(user_id, project)
+        _store.touch(user_id, project)
 
 
 @mcp.tool(
@@ -328,7 +299,7 @@ async def move_slide(
 
         _move_slide(project.presentation, from_index, to_index)
 
-        _touch(user_id, project)
+        _store.touch(user_id, project)
         return count_slides(project.presentation)
 
 
@@ -352,7 +323,7 @@ async def remove_slides(
 
         drop_slides(project.presentation, indices)
 
-        _touch(user_id, project)
+        _store.touch(user_id, project)
 
         return count_slides(project.presentation)
 
@@ -386,10 +357,10 @@ async def download_project(
         buffer = BytesIO()
         await to_thread(project.presentation.save, buffer)
 
-        _touch(user_id, project)
+        _store.touch(user_id, project)
         slide_count = count_slides(project.presentation)
 
-    base_url = _settings.owui_base_url.rstrip("/")
+    base_url = _settings.owui_base_url
 
     uploaded = await upload_file(
         filename=out_name,

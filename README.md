@@ -2,16 +2,7 @@
 
 > Office documents via MCP for OpenWebUI. Lean, modern, extensible.
 
-⚡ FastMCP &nbsp;·&nbsp; 📦 uv &nbsp;·&nbsp; 🔐 JWT (HS256) &nbsp;·&nbsp; 🌐 streamable-http
-
 ---
-
-## 🎯 Status
-
-| Name | Format | Status |
-|---|---|---|
-| PowerPoint | `.pptx` | ✅ |
-| Word | `.docx` | ✅ |
 
 ## 🚀 Setup
 
@@ -24,7 +15,7 @@ In `.env`:
 - `JWT_SECRET` → OpenWebUI's `WEBUI_SECRET_KEY`
 - `OWUI_BASE_URL` → e.g. `http://localhost:3000` (reachable from the MCP server)
 
-Place templates in 📁 [templates/](templates/).
+Place templates in [templates/](templates/).
 
 ## ▶️ Run
 

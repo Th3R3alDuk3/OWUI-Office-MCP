@@ -1,10 +1,7 @@
-from asyncio import CancelledError, create_task, sleep, to_thread
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager, suppress
+from asyncio import to_thread
 from io import BytesIO
 from zipfile import BadZipFile
 
-from cachetools import TTLCache
 from docx import Document
 from docx.enum.style import WD_STYLE_TYPE
 from fastmcp import FastMCP
@@ -15,6 +12,7 @@ from pydantic import Field
 from config import get_settings
 from models.docx import BlockInfo, DownloadProjectResponse, Project, StyleInfo
 from services.owui import download_file, upload_file
+from subservers._store import ProjectStore
 from subservers.docx._utils import (
     count_blocks,
     drop_all_blocks,
@@ -32,22 +30,20 @@ DOCX_MIME = (
 
 _settings = get_settings()
 
-_projects: TTLCache[str, Project] = TTLCache(
-    maxsize=1_000, ttl=_settings.project_ttl_seconds)
+_store = ProjectStore(
+    max_size=1_000,
+    ttl=_settings.project_ttl_seconds,
+    sweep_interval=_settings.project_sweep_interval_seconds,
+)
 
-async def _ttl_task(
-    interval: float,
-) -> None:
-    while True:
-        await sleep(interval)
-        _projects.expire()
+lifespan = _store.lifespan
 
 
 def _get_project(
     user_id: str = TokenClaim("id"),
 ) -> Project:
 
-    project = _projects.get(user_id)
+    project = _store.get(user_id)
 
     if project is None:
         raise ValueError(
@@ -56,32 +52,6 @@ def _get_project(
         )
 
     return project
-
-
-def _touch(
-    user_id: str,
-    project: Project,
-) -> None:
-    if _projects.get(user_id) is project:
-        _projects[user_id] = project
-
-
-@asynccontextmanager
-async def lifespan(
-    server: FastMCP,
-) -> AsyncIterator[None]:
-
-    task = create_task(
-        _ttl_task(_settings.project_sweep_interval_seconds))
-
-    try:
-        yield
-    finally:
-
-        task.cancel()
-
-        with suppress(CancelledError):
-            await task
 
 
 mcp = FastMCP(name="docx")
@@ -118,7 +88,7 @@ async def create_project(
     document = await to_thread(Document, template_file)
     drop_all_blocks(document)
 
-    _projects[user_id] = Project(document=document)
+    _store.set(user_id, Project(document=document))
 
 
 @mcp.tool(
@@ -135,7 +105,7 @@ async def open_project(
     user_id: str = TokenClaim("id"),
 ) -> None:
 
-    base_url = _settings.owui_base_url.rstrip("/")
+    base_url = _settings.owui_base_url
 
     file_content = await download_file(
         file_id=file_id,
@@ -150,7 +120,7 @@ async def open_project(
             f"File '{file_id}' is not a valid `.docx` document."
         ) from error
 
-    _projects[user_id] = Project(document=document)
+    _store.set(user_id, Project(document=document))
 
 
 @mcp.tool(
@@ -204,7 +174,7 @@ async def insert_paragraph(
         except (KeyError, ValueError):
             raise ValueError(
                 f"Style '{style}' not found."
-            )
+            ) from None
 
         project.document.add_paragraph(text, style=style)
 
@@ -212,7 +182,7 @@ async def insert_paragraph(
             _move_block(
                 project.document, count_blocks(project.document) - 1, block_index)
 
-        _touch(user_id, project)
+        _store.touch(user_id, project)
         return count_blocks(project.document)
 
 
@@ -262,7 +232,7 @@ async def insert_table(
         except (KeyError, ValueError):
             raise ValueError(
                 f"Style '{style}' not found."
-            )
+            ) from None
 
         table = project.document.add_table(rows=rows, cols=cols)
 
@@ -277,7 +247,7 @@ async def insert_table(
             _move_block(
                 project.document, count_blocks(project.document) - 1, block_index)
 
-        _touch(user_id, project)
+        _store.touch(user_id, project)
         return count_blocks(project.document)
 
 
@@ -311,7 +281,7 @@ async def insert_page_break(
             _move_block(
                 project.document, count_blocks(project.document) - 1, block_index)
 
-        _touch(user_id, project)
+        _store.touch(user_id, project)
         return count_blocks(project.document)
 
 
@@ -355,7 +325,7 @@ async def move_block(
 
         _move_block(project.document, from_index, to_index)
 
-        _touch(user_id, project)
+        _store.touch(user_id, project)
         return count_blocks(project.document)
 
 
@@ -382,7 +352,7 @@ async def remove_blocks(
 
         drop_blocks(project.document, indices)
 
-        _touch(user_id, project)
+        _store.touch(user_id, project)
 
         return count_blocks(project.document)
 
@@ -416,10 +386,10 @@ async def download_project(
         buffer = BytesIO()
         await to_thread(project.document.save, buffer)
 
-        _touch(user_id, project)
+        _store.touch(user_id, project)
         block_count = count_blocks(project.document)
 
-    base_url = _settings.owui_base_url.rstrip("/")
+    base_url = _settings.owui_base_url
 
     uploaded = await upload_file(
         filename=out_name,
