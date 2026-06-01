@@ -15,15 +15,6 @@ logger = get_logger(__name__)
 
 _W_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
-_P = f"{_W_NS}p"
-_TBL = f"{_W_NS}tbl"
-_SECT_PR = f"{_W_NS}sectPr"
-
-_RELEVANT_STYLE_TYPES = {
-    WD_STYLE_TYPE.PARAGRAPH,
-    WD_STYLE_TYPE.TABLE,
-}
-
 
 def list_template_names(
     templates_dir: Path,
@@ -53,7 +44,7 @@ def list_style_infos(
 
     for style in document.styles:
 
-        if style.type not in _RELEVANT_STYLE_TYPES:
+        if style.type not in {WD_STYLE_TYPE.PARAGRAPH, WD_STYLE_TYPE.TABLE}:
             continue
 
         style_infos[style.name] = StyleInfo(
@@ -71,7 +62,7 @@ def _content_blocks(
     children: list = []
 
     for child in document.element.body:
-        if child.tag != _SECT_PR:
+        if child.tag != f"{_W_NS}sectPr":
             children.append(child)
 
     return children
@@ -93,9 +84,9 @@ def content_blocks(
 
     for child in _content_blocks(document):
 
-        if child.tag == _P:
+        if child.tag == f"{_W_NS}p":
             blocks.append(Paragraph(child, body))
-        elif child.tag == _TBL:
+        elif child.tag == f"{_W_NS}tbl":
             blocks.append(Table(child, body))
         else:
             blocks.append(child)
