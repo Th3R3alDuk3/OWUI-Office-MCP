@@ -12,7 +12,13 @@ from pptx import Presentation
 from pydantic import Field
 
 from config import get_settings
-from models.pptx import DownloadProjectResponse, LayoutInfo, Project, SlideInfo
+from models.pptx import (
+    DownloadProjectResponse,
+    LayoutInfo,
+    PlaceholderText,
+    Project,
+    SlideInfo,
+)
 from services.owui import download_file, upload_file
 from subservers.pptx._utils import (
     count_slides,
@@ -199,9 +205,9 @@ async def list_layouts(
 async def insert_slide(
     master_index: int = Field(description="From `list_masters`."),
     layout_name: str = Field(description="From `list_layouts`."),
-    placeholders: dict[int, str] = Field(
-        default_factory=dict,
-        description="Placeholder `idx` -> text. Missing keys stay empty.",
+    placeholders: list[PlaceholderText] = Field(
+        default_factory=list,
+        description="Text placeholders to fill, each targeting one `idx`.",
     ),
     slide_index: int | None = Field(
         default=None,
@@ -232,9 +238,9 @@ async def insert_slide(
 
         slide = project.presentation.slides.add_slide(layout)
 
-        for idx, text in placeholders.items():
+        for placeholder in placeholders:
             with suppress(KeyError):
-                slide.placeholders[idx].text = text
+                slide.placeholders[placeholder.idx].text = placeholder.text
 
         if slide_index is not None:
             _move_slide(
@@ -266,7 +272,7 @@ async def list_slides(
     name="edit_slide",
     description=(
         "Update text placeholders on an existing slide by zero-based index "
-        "(from `list_slides`). Only listed `idx` keys are changed; others stay "
+        "(from `list_slides`). Only the listed `idx` are changed; others stay "
         "as-is. Changes stay in memory only. After the user's requested batch "
         "of edits is finished, always call `download_project` exactly once — "
         "not after every individual insert/edit/move/remove."
@@ -274,8 +280,8 @@ async def list_slides(
 )
 async def edit_slide(
     slide_index: int = Field(description="Zero-based slide index."),
-    placeholders: dict[int, str] = Field(
-        description="Placeholder `idx` -> new text.",
+    placeholders: list[PlaceholderText] = Field(
+        description="Placeholders to update, each targeting one `idx`.",
     ),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
@@ -290,9 +296,9 @@ async def edit_slide(
                 f"Slide index {slide_index} out of range."
             )
 
-        for idx, text in placeholders.items():
+        for placeholder in placeholders:
             with suppress(KeyError):
-                slide.placeholders[idx].text = text
+                slide.placeholders[placeholder.idx].text = placeholder.text
 
         _touch(user_id, project)
 

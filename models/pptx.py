@@ -2,7 +2,7 @@ from asyncio import Lock
 from dataclasses import dataclass, field
 
 from pptx.presentation import Presentation as PresentationType
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 @dataclass
@@ -19,6 +19,11 @@ class PlaceholderInfo(BaseModel):
 
 class LayoutInfo(BaseModel):
     placeholders: list[PlaceholderInfo]
+
+
+class PlaceholderText(BaseModel):
+    idx: int = Field(description="Placeholder `idx` from `list_layouts`.")
+    text: str = Field(description="Text for this placeholder.")
 
 
 class SlideInfo(BaseModel):
