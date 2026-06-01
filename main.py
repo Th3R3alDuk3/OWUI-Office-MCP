@@ -16,16 +16,21 @@ OWUI-Office-MCP exposes two stateful Office toolsets:
 - Use the `pptx_*` tools for PowerPoint presentations.
 - Use the `docx_*` tools for Word documents.
 
-Each user has one in-memory project per toolset. `create_project` starts a new
-project from a template and overwrites any existing project for that user in
-the same toolset.
+Each user has one in-memory project per toolset. A project is started one of
+two ways, each overwriting any existing project for that user in the same
+toolset:
+- `create_project` starts a new, empty project from a template. Use this when
+  the user did not provide a file.
+- `open_project` loads an existing document from OpenWebUI by its `file_id`.
+  Use this whenever the user provided or attached a file to work on.
 
-Workflow: create a project, build or edit it with insert/edit/move/remove
-tools, then call the matching `download_project` tool exactly once after the
-user's requested batch of edits is complete. Do not call `download_project`
-after every individual change when multiple changes belong to one request. If
-the user later asks for another edit, apply that edit batch to the active
-project and call `download_project` once again.
+Workflow: start a project with `create_project` or `open_project`, build or
+edit it with the insert/edit/move/remove tools, then call the matching
+`download_project` tool exactly once after the user's requested batch of edits
+is complete. Do not call `download_project` after every individual change when
+multiple changes belong to one request. If the user later asks for another
+edit, apply that edit batch to the active project and call `download_project`
+once again.
 
 Mounted tool names are prefixed, for example `pptx_download_project` and
 `docx_download_project`. Tool descriptions may mention local names like

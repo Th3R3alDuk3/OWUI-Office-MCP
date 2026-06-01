@@ -2,6 +2,7 @@ from asyncio import CancelledError, create_task, sleep, to_thread
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from io import BytesIO
+from zipfile import BadZipFile
 
 from cachetools import TTLCache
 from docx import Document
@@ -142,7 +143,12 @@ async def open_project(
         base_url=base_url,
     )
 
-    document = await to_thread(Document, BytesIO(file_content))
+    try:
+        document = await to_thread(Document, BytesIO(file_content))
+    except (BadZipFile, ValueError) as error:
+        raise ValueError(
+            f"File '{file_id}' is not a valid `.docx` document."
+        ) from error
 
     _projects[user_id] = Project(document=document)
 
