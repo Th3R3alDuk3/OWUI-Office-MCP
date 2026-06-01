@@ -49,7 +49,10 @@ def _get_project(
     project = _projects.get(user_id)
 
     if project is None:
-        raise ValueError("No project for this user. Call `create_project` first.")
+        raise ValueError(
+            "No project for this user. "
+            "Call `create_project` or `open_project` first."
+        )
 
     return project
 
@@ -86,7 +89,9 @@ mcp = FastMCP(name="docx")
 @mcp.tool(
     name="list_templates",
     description=(
-        "Step 1: list available templates. Pick one, then call `list_styles`."
+        "Step 1 (no input file): list available templates. Pick one, then "
+        "call `create_project`. If the user provided a file, call "
+        "`open_project` instead."
     ),
 )
 async def list_templates() -> list[str]:
@@ -95,26 +100,11 @@ async def list_templates() -> list[str]:
 
 
 @mcp.tool(
-    name="list_styles",
-    description=(
-        "Step 2: list paragraph and table styles of a template "
-        "(name -> type, builtin). Then call `create_project` and "
-        "`insert_paragraph` / `insert_table`."
-    ),
-)
-async def list_styles(
-    template_name: str = Field(description="From `list_templates`."),
-) -> dict[str, StyleInfo]:
-    return await to_thread(
-        list_style_infos, _settings.templates_dir, template_name)
-
-
-@mcp.tool(
     name="create_project",
     description=(
-        "Step 3: create an empty in-memory project from a template. Overwrites "
-        "any existing project for the user. Then call `insert_paragraph` / "
-        "`insert_table` per block."
+        "Step 2 (template branch): create an empty in-memory project from a "
+        "template. Overwrites any existing project for the user. Skip if you "
+        "used `open_project`. Then call `list_styles`."
     ),
 )
 async def create_project(
@@ -133,8 +123,9 @@ async def create_project(
 @mcp.tool(
     name="open_project",
     description=(
-        "Step 3: Open an existing project from OpenWebUI `file_id`. "
-        "Overwrites any existing project for the user."
+        "Step 1 (input-file branch): open an existing `.docx` from OpenWebUI "
+        "`file_id`. Overwrites any existing project for the user. Then call "
+        "`list_styles` to add blocks, or `list_blocks` to edit existing ones."
     ),
 )
 async def open_project(
@@ -154,6 +145,21 @@ async def open_project(
     document = await to_thread(Document, BytesIO(file_content))
 
     _projects[user_id] = Project(document=document)
+
+
+@mcp.tool(
+    name="list_styles",
+    description=(
+        "Step 3: list the paragraph and table styles of the current project "
+        "(name -> type, builtin). Then call `insert_paragraph` / "
+        "`insert_table`."
+    ),
+)
+async def list_styles(
+    project: Project = Depends(_get_project),
+) -> dict[str, StyleInfo]:
+    async with project.lock:
+        return list_style_infos(project.document)
 
 
 @mcp.tool(

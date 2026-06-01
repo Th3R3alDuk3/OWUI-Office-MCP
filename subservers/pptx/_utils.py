@@ -39,11 +39,8 @@ def list_template_names(
 
 
 def list_master_names(
-    templates_dir: Path,
-    template_name: str,
+    presentation: PresentationType,
 ) -> dict[int, str]:
-
-    presentation = Presentation(templates_dir.joinpath(template_name))
 
     master_names: dict[int, str] = {}
 
@@ -63,12 +60,9 @@ def list_master_names(
 
 
 def list_layout_infos(
-    templates_dir: Path,
-    template_name: str,
+    presentation: PresentationType,
     master_index: int,
 ) -> dict[str, LayoutInfo]:
-
-    presentation = Presentation(templates_dir.joinpath(template_name))
 
     master = presentation.slide_masters[master_index]
 

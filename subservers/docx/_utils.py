@@ -45,11 +45,8 @@ def list_template_names(
 
 
 def list_style_infos(
-    templates_dir: Path,
-    template_name: str,
+    document: DocumentType,
 ) -> dict[str, StyleInfo]:
-
-    document = Document(templates_dir.joinpath(template_name))
 
     style_infos: dict[str, StyleInfo] = {}
 

@@ -49,7 +49,10 @@ def _get_project(
     project = _projects.get(user_id)
 
     if project is None:
-        raise ValueError("No project for this user. Call `create_project` first.")
+        raise ValueError(
+            "No project for this user. "
+            "Call `create_project` or `open_project` first."
+        )
 
     return project
 
@@ -86,7 +89,9 @@ mcp = FastMCP(name="pptx")
 @mcp.tool(
     name="list_templates",
     description=(
-        "Step 1: list available templates. Pick one, then call `list_masters`."
+        "Step 1 (no input file): list available templates. Pick one, then "
+        "call `create_project`. If the user provided a file, call "
+        "`open_project` instead."
     ),
 )
 async def list_templates() -> list[str]:
@@ -95,39 +100,11 @@ async def list_templates() -> list[str]:
 
 
 @mcp.tool(
-    name="list_masters",
-    description=(
-        "Step 2: list slide masters of a template. Pick one, then call "
-        "`list_layouts`."
-    ),
-)
-async def list_masters(
-    template_name: str = Field(description="From `list_templates`."),
-) -> dict[int, str]:
-    return await to_thread(
-        list_master_names, _settings.templates_dir, template_name)
-
-
-@mcp.tool(
-    name="list_layouts",
-    description=(
-        "Step 3: list slide layouts of a master with their placeholders "
-        "(idx, name, type). Then call `create_project` and `insert_slide`."
-    ),
-)
-async def list_layouts(
-    template_name: str = Field(description="From `list_templates`."),
-    master_index: int = Field(description="From `list_masters`."),
-) -> dict[str, LayoutInfo]:
-    return await to_thread(
-        list_layout_infos, _settings.templates_dir, template_name, master_index)
-
-
-@mcp.tool(
     name="create_project",
     description=(
-        "Step 4: create an empty in-memory project from a template. Overwrites "
-        "any existing project for the user. Then call `insert_slide` per slide."
+        "Step 2 (template branch): create an empty in-memory project from a "
+        "template. Overwrites any existing project for the user. Skip if you "
+        "used `open_project`. Then call `list_masters`."
     ),
 )
 async def create_project(
@@ -146,8 +123,9 @@ async def create_project(
 @mcp.tool(
     name="open_project",
     description=(
-        "Step 4: Open an existing project from OpenWebUI `file_id`. "
-        "Overwrites any existing project for the user."
+        "Step 1 (input-file branch): open an existing `.pptx` from OpenWebUI "
+        "`file_id`. Overwrites any existing project for the user. Then call "
+        "`list_masters` to add slides, or `list_slides` to edit existing ones."
     ),
 )
 async def open_project(
@@ -167,6 +145,38 @@ async def open_project(
     presentation = await to_thread(Presentation, BytesIO(file_content))
 
     _projects[user_id] = Project(presentation=presentation)
+
+
+@mcp.tool(
+    name="list_masters",
+    description=(
+        "Step 3: list the slide masters of the current project. Pick one, "
+        "then call `list_layouts`."
+    ),
+)
+async def list_masters(
+    project: Project = Depends(_get_project),
+) -> dict[int, str]:
+    async with project.lock:
+        return list_master_names(project.presentation)
+
+
+@mcp.tool(
+    name="list_layouts",
+    description=(
+        "Step 4: list the layouts of a master with their placeholders "
+        "(idx, name, type). Then call `insert_slide`."
+    ),
+)
+async def list_layouts(
+    master_index: int = Field(description="From `list_masters`."),
+    project: Project = Depends(_get_project),
+) -> dict[str, LayoutInfo]:
+    async with project.lock:
+        try:
+            return list_layout_infos(project.presentation, master_index)
+        except IndexError:
+            raise ValueError(f"Master '{master_index}' not found.")
 
 
 @mcp.tool(

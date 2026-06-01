@@ -38,14 +38,17 @@ Runs as `streamable-http` on `HOST:PORT` from `.env`.
 
 Each subserver is mounted under its file extension as a namespace (`pptx_*`, `docx_*`). Per-user state per subserver (JWT claim `id`), sliding TTL, auto-sweep — no disk writes.
 
-### `pptx` (10)
+A project starts one of two ways: from a template (`create_project`) or from an existing file in OpenWebUI (`open_project`). Master/layout/style discovery then runs against that project, so both branches behave the same.
+
+### `pptx` (11)
 
 | Tool | |
 |---|---|
 | `list_templates` | available `.pptx` templates |
-| `list_masters` | slide masters of a template |
-| `list_layouts` | layouts + placeholders of a master |
 | `create_project` | empty project from a template |
+| `open_project` | open an existing `.pptx` from OpenWebUI by `file_id` |
+| `list_masters` | slide masters of the current project |
+| `list_layouts` | layouts + placeholders of a master |
 | `insert_slide` | insert a slide from a layout (optionally at an index, otherwise append) |
 | `list_slides` | list slides (index, layout, text) |
 | `edit_slide` | update placeholders of a slide |
@@ -53,13 +56,14 @@ Each subserver is mounted under its file extension as a namespace (`pptx_*`, `do
 | `remove_slides` | remove slides by index |
 | `download_project` | upload the project to OpenWebUI |
 
-### `docx` (10)
+### `docx` (11)
 
 | Tool | |
 |---|---|
 | `list_templates` | available `.docx` templates |
-| `list_styles` | paragraph and table styles of a template |
 | `create_project` | empty project from a template |
+| `open_project` | open an existing `.docx` from OpenWebUI by `file_id` |
+| `list_styles` | paragraph and table styles of the current project |
 | `insert_paragraph` | insert a paragraph (optionally at an index, otherwise append) |
 | `insert_table` | insert a table (optionally with cell data, optionally at an index) |
 | `insert_page_break` | insert a page break as a body block (optionally at an index) |
