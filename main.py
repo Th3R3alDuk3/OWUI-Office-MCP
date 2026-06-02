@@ -31,9 +31,10 @@ toolset:
 
 Workflow: start a project with `create_project` or `open_project`, build or
 edit it with the mutation tools, then call the matching `finalize_project`
-tool exactly once after the user's requested batch of edits is complete. Do not call `finalize_project` after every individual change when
-multiple changes belong to one request. If the user later asks for another
-edit, apply that edit batch to the active project and call `finalize_project`
+tool exactly once after the user's requested batch of edits is complete. Do
+not call `finalize_project` after every individual change when multiple
+changes belong to one request. If the user later asks for another edit,
+apply that edit batch to the active project and call `finalize_project`
 once again.
 
 Mounted tool names are prefixed, for example `pptx_finalize_project` and
