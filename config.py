@@ -11,18 +11,18 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    host: str = "127.0.0.1"
-    port: int = 8000
+    host: str
+    port: int
 
     templates_dir: Path
 
     jwt_secret: str
-    jwt_algorithm: str = "HS256"
+    jwt_algorithm: str
 
     owui_base_url: str
 
-    project_ttl_seconds: int = 3600
-    project_sweep_interval_seconds: int = 300
+    project_ttl_seconds: int
+    project_sweep_interval_seconds: int
 
 
 @lru_cache(maxsize=1)

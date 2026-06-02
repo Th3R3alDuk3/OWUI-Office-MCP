@@ -25,6 +25,19 @@ uv run python main.py
 
 Runs as `streamable-http` on `HOST:PORT` from `.env`.
 
+## 🐳 Docker (optional)
+
+```bash
+docker build -t owui-office-mcp .
+
+docker run -d --restart unless-stopped \
+-p 8000:8000 \
+--env-file .env \
+owui-office-mcp
+```
+
+Config is read from your `.env` via `--env-file`. `HOST=0.0.0.0` in `.env` makes the server reachable from outside the container, and `TEMPLATES_DIR=./templates` resolves to the templates baked into the image; mount `-v ./templates:/app/templates` to swap them without rebuilding. If OpenWebUI runs on the host, set `OWUI_BASE_URL=http://localhost:3000`.
+
 ## 🛠️ Tools
 
 Each subserver is mounted under its file extension as a namespace (`pptx_*`, `docx_*`, `xlsx_*`). Per-user state per subserver (JWT claim `id`), sliding TTL, auto-sweep — no disk writes.
