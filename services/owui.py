@@ -4,7 +4,7 @@ from models.owui import OWUIFile
 
 
 async def upload_file(
-    filename: str,
+    file_name: str,
     data: bytes,
     content_type: str,
     token: str,
@@ -17,7 +17,7 @@ async def upload_file(
             response = await client.post(
                 url=f"{base_url}/api/v1/files/",
                 headers={"Authorization": f"Bearer {token}"},
-                files={"file": (filename, data, content_type)},
+                files={"file": (file_name, data, content_type)},
             )
 
         response.raise_for_status()

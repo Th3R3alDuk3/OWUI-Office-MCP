@@ -1,8 +1,15 @@
+import re
 from asyncio import Lock
 from dataclasses import dataclass, field
 
 from pptx.presentation import Presentation as PresentationType
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+_BULLET_MARKER = re.compile(
+    r"^[ \t]*(?:[-‐‑‒–—―−*+•∙‣⁃◦·▪▫■□●○◆◇❖]|\d+[.)])[ \t]+",
+    re.MULTILINE,
+)
 
 
 @dataclass
@@ -22,16 +29,17 @@ class LayoutInfo(BaseModel):
 
 
 class PlaceholderText(BaseModel):
-    idx: int = Field(description="Placeholder `idx` from `list_layouts`.")
-    text: str = Field(
-        description=(
-            "Plain text for this placeholder. Separate lines / bullet items "
-            "with `\\n` — the template renders bullets and numbering "
-            "automatically. Do NOT prefix lines with bullet glyphs, dashes, "
-            "asterisks, or numbers (e.g. `•`, `-`, `*`, `1.`); write the bare "
-            "text only."
-        ),
+    idx: int = Field(
+        description="Placeholder `idx` from `list_layouts`."
     )
+    text: str = Field(
+        description="Plain text for this placeholder."
+    )
+
+    @field_validator("text")
+    @classmethod
+    def validate_text(cls, value: str) -> str:
+        return _BULLET_MARKER.sub("", value)
 
 
 class SlideInfo(BaseModel):
@@ -39,7 +47,7 @@ class SlideInfo(BaseModel):
     text: str
 
 
-class DownloadProjectResponse(BaseModel):
-    filename: str
+class ProjectResponse(BaseModel):
+    file_name: str
     slide_count: int
     owui_url: str

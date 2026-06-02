@@ -18,7 +18,9 @@ class SheetInfo(BaseModel):
 
 
 class CellInput(BaseModel):
-    ref: str = Field(description="A1-style cell reference, e.g. `B2`.")
+    ref: str = Field(
+        description="A1-style cell reference, e.g. `B2`."
+    )
     value: bool | int | float | str | None = Field(
         default=None,
         description=(
@@ -32,7 +34,7 @@ class CellInput(BaseModel):
     )
 
 
-class DownloadProjectResponse(BaseModel):
-    filename: str
+class ProjectResponse(BaseModel):
+    file_name: str
     sheet_count: int
     owui_url: str

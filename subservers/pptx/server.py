@@ -11,10 +11,10 @@ from pydantic import Field
 
 from config import get_settings
 from models.pptx import (
-    DownloadProjectResponse,
     LayoutInfo,
     PlaceholderText,
     Project,
+    ProjectResponse,
     SlideInfo,
 )
 from services.owui import download_file, upload_file
@@ -181,7 +181,7 @@ async def list_layouts(
         "Insert a slide using a layout from `list_layouts`, optionally "
         "filling text placeholders by `idx`. Without `slide_index` the slide "
         "is appended; otherwise it is inserted at that zero-based position. "
-        "After the requested batch of edits, call `download_project` once "
+        "After the requested batch of edits, call `finalize_project` once "
         "(not after each change)."
     ),
 )
@@ -257,7 +257,7 @@ async def list_slides(
         "Update text placeholders on an existing slide by zero-based index "
         "(from `list_slides`). Only the listed `idx` are changed; others stay "
         "as-is. Changes stay in memory only. After the requested batch of "
-        "edits, call `download_project` once (not after each change)."
+        "edits, call `finalize_project` once (not after each change)."
     ),
 )
 async def edit_slide(
@@ -290,7 +290,7 @@ async def edit_slide(
     description=(
         "Move a slide to a new position by zero-based index. Negative "
         "`to_index` counts from the end. Changes stay in memory only. After "
-        "the requested batch of edits, call `download_project` once (not "
+        "the requested batch of edits, call `finalize_project` once (not "
         "after each change)."
     ),
 )
@@ -319,7 +319,7 @@ async def move_slide(
         "Remove slides by zero-based index (from `list_slides`). Indices refer "
         "to positions before removal; duplicates are ignored. Changes stay in "
         "memory only. After the requested batch of edits, call "
-        "`download_project` once (not after each change)."
+        "`finalize_project` once (not after each change)."
     ),
 )
 async def remove_slides(
@@ -338,16 +338,16 @@ async def remove_slides(
 
 
 @mcp.tool(
-    name="download_project",
+    name="finalize_project",
     description=(
         "Final step of an edit batch: serialize the current project to "
         "`.pptx` and upload it to OpenWebUI. Call exactly once after the "
         "requested batch of changes, not after each one. The project stays "
         "active afterwards, so a later edit batch ends with another single "
-        "`download_project` call."
+        "`finalize_project` call."
     ),
 )
-async def download_project(
+async def finalize_project(
     file_name: str = Field(
         min_length=1, max_length=60,
         description="Stem without `.pptx`.",
@@ -355,7 +355,7 @@ async def download_project(
     token: AccessToken = CurrentAccessToken(),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
-) -> DownloadProjectResponse:
+) -> ProjectResponse:
 
     async with project.lock:
 
@@ -368,15 +368,15 @@ async def download_project(
         slide_count = count_slides(project.presentation)
 
     uploaded = await upload_file(
-        filename=out_name,
+        file_name=out_name,
         data=buffer.getvalue(),
         content_type=PPTX_MIME,
         token=token.token,
         base_url=_settings.owui_base_url,
     )
 
-    return DownloadProjectResponse(
-        filename=out_name,
+    return ProjectResponse(
+        file_name=out_name,
         slide_count=slide_count,
         owui_url=(
             f"{_settings.owui_base_url}/api/v1/files/{uploaded.id}/content"

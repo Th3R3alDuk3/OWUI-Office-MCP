@@ -21,7 +21,7 @@ class BlockInfo(BaseModel):
     text: str
 
 
-class DownloadProjectResponse(BaseModel):
-    filename: str
+class ProjectResponse(BaseModel):
+    file_name: str
     block_count: int
     owui_url: str

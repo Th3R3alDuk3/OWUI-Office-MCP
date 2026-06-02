@@ -10,7 +10,7 @@ from fastmcp.server.auth import AccessToken
 from pydantic import Field
 
 from config import get_settings
-from models.docx import BlockInfo, DownloadProjectResponse, Project, StyleInfo
+from models.docx import BlockInfo, Project, ProjectResponse, StyleInfo
 from services.owui import download_file, upload_file
 from subservers._store import ProjectStore
 from subservers.docx._utils import (
@@ -157,7 +157,7 @@ async def list_styles(
         "`Heading 1`, `Normal`) to control formatting. Without `block_index` "
         "the paragraph is appended; otherwise it is inserted at that "
         "zero-based position. Returns the new block count. After the "
-        "requested batch of edits, call `download_project` once (not after "
+        "requested batch of edits, call `finalize_project` once (not after "
         "each change)."
     ),
 )
@@ -204,7 +204,7 @@ async def insert_paragraph(
         "from `data` (row-major; extra rows/cols are ignored). Without "
         "`block_index` the table is appended; otherwise it is inserted at "
         "that zero-based position. Returns the new block count. After the "
-        "requested batch of edits, call `download_project` once (not after "
+        "requested batch of edits, call `finalize_project` once (not after "
         "each change)."
     ),
 )
@@ -268,7 +268,7 @@ async def insert_table(
         "Insert a page break as a body block. Without `block_index` it is "
         "appended; otherwise it is inserted at that zero-based position. "
         "Returns the new block count. After the requested batch of edits, "
-        "call `download_project` once (not after each change)."
+        "call `finalize_project` once (not after each change)."
     ),
 )
 async def insert_page_break(
@@ -316,7 +316,7 @@ async def list_blocks(
         "Move a body block (paragraph or table) to a new position by "
         "zero-based index. Negative `to_index` counts from the end. Changes "
         "stay in memory only. After the requested batch of edits, call "
-        "`download_project` once (not after each change)."
+        "`finalize_project` once (not after each change)."
     ),
 )
 async def move_block(
@@ -344,7 +344,7 @@ async def move_block(
         "Remove body blocks (paragraphs and tables) by zero-based index "
         "(from `list_blocks`). Indices refer to positions before removal; "
         "duplicates are ignored. Changes stay in memory only. After the "
-        "requested batch of edits, call `download_project` once (not after "
+        "requested batch of edits, call `finalize_project` once (not after "
         "each change)."
     ),
 )
@@ -366,16 +366,16 @@ async def remove_blocks(
 
 
 @mcp.tool(
-    name="download_project",
+    name="finalize_project",
     description=(
         "Final step of an edit batch: serialize the current project to "
         "`.docx` and upload it to OpenWebUI. Call exactly once after the "
         "requested batch of changes, not after each one. The project stays "
         "active afterwards, so a later edit batch ends with another single "
-        "`download_project` call."
+        "`finalize_project` call."
     ),
 )
-async def download_project(
+async def finalize_project(
     file_name: str = Field(
         min_length=1, max_length=60,
         description="Stem without `.docx`.",
@@ -383,7 +383,7 @@ async def download_project(
     token: AccessToken = CurrentAccessToken(),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
-) -> DownloadProjectResponse:
+) -> ProjectResponse:
 
     async with project.lock:
 
@@ -396,15 +396,15 @@ async def download_project(
         block_count = count_blocks(project.document)
 
     uploaded = await upload_file(
-        filename=out_name,
+        file_name=out_name,
         data=buffer.getvalue(),
         content_type=DOCX_MIME,
         token=token.token,
         base_url=_settings.owui_base_url,
     )
 
-    return DownloadProjectResponse(
-        filename=out_name,
+    return ProjectResponse(
+        file_name=out_name,
         block_count=block_count,
         owui_url=(
             f"{_settings.owui_base_url}/api/v1/files/{uploaded.id}/content"

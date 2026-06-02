@@ -30,15 +30,15 @@ toolset:
   a template name from `list_templates`, and never invented.
 
 Workflow: start a project with `create_project` or `open_project`, build or
-edit it with the mutation tools, then call the matching `download_project`
-tool exactly once after the user's requested batch of edits is complete. Do not call `download_project` after every individual change when
+edit it with the mutation tools, then call the matching `finalize_project`
+tool exactly once after the user's requested batch of edits is complete. Do not call `finalize_project` after every individual change when
 multiple changes belong to one request. If the user later asks for another
-edit, apply that edit batch to the active project and call `download_project`
+edit, apply that edit batch to the active project and call `finalize_project`
 once again.
 
-Mounted tool names are prefixed, for example `pptx_download_project` and
-`docx_download_project`. Tool descriptions may mention local names like
-`download_project`; use the corresponding prefixed tool exposed by this root
+Mounted tool names are prefixed, for example `pptx_finalize_project` and
+`docx_finalize_project`. Tool descriptions may mention local names like
+`finalize_project`; use the corresponding prefixed tool exposed by this root
 server.
 """.strip()
 

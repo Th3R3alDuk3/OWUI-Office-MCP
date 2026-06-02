@@ -45,7 +45,7 @@ A project starts one of two ways: from a template (`create_project`) or from an 
 | `edit_slide` | update placeholders of a slide |
 | `move_slide` | move a slide to a new position by index |
 | `remove_slides` | remove slides by index |
-| `download_project` | upload the project to OpenWebUI |
+| `finalize_project` | upload the project to OpenWebUI |
 
 ### `docx` (11)
 
@@ -61,7 +61,7 @@ A project starts one of two ways: from a template (`create_project`) or from an 
 | `list_blocks` | list body blocks (index, type, text preview) |
 | `move_block` | move a body block (paragraph & table) by index |
 | `remove_blocks` | remove body blocks (paragraph & table) by index |
-| `download_project` | upload the project to OpenWebUI |
+| `finalize_project` | upload the project to OpenWebUI |
 
 ### `xlsx` (12)
 
@@ -78,4 +78,4 @@ A project starts one of two ways: from a template (`create_project`) or from an 
 | `read_sheet` | read a sheet's used range as rows of text |
 | `move_sheet` | move a worksheet to a new position by index |
 | `remove_sheets` | remove worksheets by title |
-| `download_project` | upload the project to OpenWebUI |
+| `finalize_project` | upload the project to OpenWebUI |
