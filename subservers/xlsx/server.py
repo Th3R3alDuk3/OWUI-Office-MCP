@@ -19,7 +19,7 @@ from models.xlsx import (
 from services.owui import download_file, upload_file
 from subservers._store import ProjectStore
 from subservers.xlsx._utils import (
-    add_sheet as _add_sheet,
+    insert_sheet as _insert_sheet,
     clear_workbook,
     count_sheets,
     drop_sheets,
@@ -89,7 +89,7 @@ async def list_templates() -> list[str]:
 async def create_project(
     template_name: str = Field(description="From `list_templates`."),
     user_id: str = TokenClaim("id"),
-) -> None:
+) -> str:
 
     templates = await to_thread(list_template_names, _settings.templates_dir)
 
@@ -105,6 +105,12 @@ async def create_project(
     clear_workbook(workbook)
 
     _store.set(user_id, Project(workbook=workbook))
+
+    return (
+        f"Project created from template '{template_name}'. "
+        "Call `list_sheets` to see the initial sheet and `list_styles` for "
+        "available styles, then `insert_sheet`, `write_rows`, etc. to edit it."
+    )
 
 
 @mcp.tool(
@@ -125,7 +131,7 @@ async def open_project(
     ),
     token: AccessToken = CurrentAccessToken(),
     user_id: str = TokenClaim("id"),
-) -> None:
+) -> str:
 
     file_content = await download_file(
         file_id=file_id,
@@ -141,6 +147,12 @@ async def open_project(
         ) from error
 
     _store.set(user_id, Project(workbook=workbook))
+
+    return (
+        f"Project opened from attached file '{file_id}'. "
+        "Call `list_styles` to see available styles and `list_sheets` to see its initial state, "
+        "then `insert_sheet`, `write_rows`, etc. to edit it."
+    )
 
 
 @mcp.tool(
@@ -173,15 +185,15 @@ async def list_styles(
 
 
 @mcp.tool(
-    name="add_sheet",
+    name="insert_sheet",
     description=(
-        "Add an empty worksheet. Without `index` it is appended; otherwise it "
-        "is inserted at that zero-based position. Returns the new sheet count. "
+        "Insert an empty worksheet. Without `index` it is appended; otherwise it "
+        "is inserted at that zero-based position. Returns the new sheet count as `{sheet_count}`. "
         "After the requested batch of edits, call `finalize_project` once "
         "(not after each change)."
     ),
 )
-async def add_sheet(
+async def insert_sheet(
     title: str = Field(description="Title for the new worksheet."),
     index: int | None = Field(
         default=None,
@@ -192,14 +204,15 @@ async def add_sheet(
     ),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
-) -> int:
+) -> dict[str, int]:
 
     async with project.lock:
 
-        _add_sheet(project.workbook, title, index)
+        _insert_sheet(project.workbook, title, index)
 
         _store.touch(user_id, project)
-        return count_sheets(project.workbook)
+
+        return {"sheet_count": count_sheets(project.workbook)}
 
 
 @mcp.tool(
@@ -231,13 +244,18 @@ async def write_rows(
     ),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
-) -> None:
+) -> dict[str, int]:
 
     async with project.lock:
 
         _write_rows(project.workbook, sheet, anchor, rows, style)
 
         _store.touch(user_id, project)
+
+    return {
+        "rows": len(rows),
+        "cols": len(rows[0]) if rows else 0,
+    }
 
 
 @mcp.tool(
@@ -261,13 +279,15 @@ async def write_cells(
     ),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
-) -> None:
+) -> dict[str, int]:
 
     async with project.lock:
 
         _write_cells(project.workbook, sheet, cells)
 
         _store.touch(user_id, project)
+
+    return {"cells": len(cells)}
 
 
 @mcp.tool(
@@ -300,14 +320,15 @@ async def move_sheet(
     to_index: int = Field(description="Zero-based target position."),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
-) -> int:
+) -> list[SheetInfo]:
 
     async with project.lock:
 
         _move_sheet(project.workbook, title, to_index)
 
         _store.touch(user_id, project)
-        return count_sheets(project.workbook)
+
+        return list_sheet_infos(project.workbook)
 
 
 @mcp.tool(
@@ -322,14 +343,15 @@ async def remove_sheets(
     titles: list[str] = Field(description="Worksheet titles to remove."),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
-) -> int:
+) -> dict[str, int]:
 
     async with project.lock:
 
         drop_sheets(project.workbook, titles)
 
         _store.touch(user_id, project)
-        return count_sheets(project.workbook)
+
+        return {"sheet_count": count_sheets(project.workbook)}
 
 
 @mcp.tool(
@@ -360,6 +382,7 @@ async def finalize_project(
         await to_thread(project.workbook.save, buffer)
 
         _store.touch(user_id, project)
+
         sheet_count = count_sheets(project.workbook)
 
     uploaded = await upload_file(

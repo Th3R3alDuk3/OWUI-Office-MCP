@@ -109,7 +109,7 @@ def read_sheet_rows(
     return rows
 
 
-def add_sheet(
+def insert_sheet(
     workbook: WorkbookType,
     title: str,
     index: int | None,

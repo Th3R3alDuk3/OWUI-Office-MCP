@@ -6,6 +6,7 @@ from pptx.opc.constants import RELATIONSHIP_TYPE
 from pptx.oxml import parse_xml
 from pptx.oxml.presentation import CT_SlideId, CT_SlideIdList
 from pptx.presentation import Presentation as PresentationType
+from pptx.slide import Slide
 
 from models.pptx import LayoutInfo, PlaceholderInfo, SlideInfo
 
@@ -93,6 +94,22 @@ def count_slides(
     return len(presentation.slides)
 
 
+def slide_info(
+    slide: Slide,
+) -> SlideInfo:
+
+    texts: list[str] = []
+
+    for shape in slide.shapes:
+        if shape.has_text_frame and shape.text:
+            texts.append(shape.text)
+
+    return SlideInfo(
+        layout=slide.slide_layout.name,
+        text="\n".join(texts),
+    )
+
+
 def list_slide_infos(
     presentation: PresentationType,
 ) -> list[SlideInfo]:
@@ -100,19 +117,7 @@ def list_slide_infos(
     slide_infos: list[SlideInfo] = []
 
     for slide in presentation.slides:
-
-        texts: list[str] = []
-
-        for shape in slide.shapes:
-            if shape.has_text_frame and shape.text:
-                texts.append(shape.text)
-
-        slide_infos.append(
-            SlideInfo(
-                layout=slide.slide_layout.name,
-                text="\n".join(texts),
-            )
-        )
+        slide_infos.append(slide_info(slide))
 
     return slide_infos
 

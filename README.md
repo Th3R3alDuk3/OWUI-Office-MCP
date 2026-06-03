@@ -85,7 +85,7 @@ A project starts one of two ways: from a template (`create_project`) or from an 
 | `open_project` | open an existing `.xlsx` from OpenWebUI by `file_id` |
 | `list_sheets` | worksheets of the current project (title, rows, cols) |
 | `list_styles` | named cell style names of the current project |
-| `add_sheet` | add a worksheet (optionally at an index, otherwise append) |
+| `insert_sheet` | add a worksheet (optionally at an index, otherwise append) |
 | `write_rows` | fill a contiguous block (tables / bulk data) from a 2D array at an anchor (optionally styled) |
 | `write_cells` | write scattered individual cells by A1 reference (optionally styled) |
 | `read_sheet` | read a sheet's used range as rows of text |

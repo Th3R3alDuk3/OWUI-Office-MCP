@@ -81,7 +81,7 @@ async def list_templates() -> list[str]:
 async def create_project(
     template_name: str = Field(description="From `list_templates`."),
     user_id: str = TokenClaim("id"),
-) -> None:
+) -> str:
 
     templates = await to_thread(list_template_names, _settings.templates_dir)
 
@@ -98,6 +98,12 @@ async def create_project(
 
     _store.set(user_id, Project(document=document))
 
+    return (
+        f"Project created from template '{template_name}'. "
+        "Call `list_styles` to see available styles, "
+        "then `insert_paragraph` / `insert_table` to edit it."
+    )
+
 
 @mcp.tool(
     name="open_project",
@@ -106,7 +112,7 @@ async def create_project(
         "only when the user actually attached a file; if none was given, use "
         "`create_project` instead. Overwrites any existing project for the "
         "user. Then call `list_styles` to add blocks, or `list_blocks` to "
-        "edit existing ones."
+        "reorder or remove existing ones."
     ),
 )
 async def open_project(
@@ -118,7 +124,7 @@ async def open_project(
     ),
     token: AccessToken = CurrentAccessToken(),
     user_id: str = TokenClaim("id"),
-) -> None:
+) -> str:
 
     file_content = await download_file(
         file_id=file_id,
@@ -134,6 +140,13 @@ async def open_project(
         ) from error
 
     _store.set(user_id, Project(document=document))
+
+    return (
+        f"Project opened from attached file '{file_id}'. "
+        "Call `list_styles` to see available styles, "
+        "or `list_blocks` to reorder or remove existing ones; "
+        "then `insert_paragraph` / `insert_table` to add blocks."
+    )
 
 
 @mcp.tool(
@@ -156,7 +169,7 @@ async def list_styles(
         "Insert a paragraph. Use a paragraph style from `list_styles` (e.g. "
         "`Heading 1`, `Normal`) to control formatting. Without `block_index` "
         "the paragraph is appended; otherwise it is inserted at that "
-        "zero-based position. Returns the new block count. After the "
+        "zero-based position. Returns the new block count as `{block_count}`. After the "
         "requested batch of edits, call `finalize_project` once (not after "
         "each change)."
     ),
@@ -176,7 +189,7 @@ async def insert_paragraph(
     ),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
-) -> int:
+) -> dict[str, int]:
 
     async with project.lock:
 
@@ -194,7 +207,8 @@ async def insert_paragraph(
                 project.document, count_blocks(project.document) - 1, block_index)
 
         _store.touch(user_id, project)
-        return count_blocks(project.document)
+
+        return {"block_count": count_blocks(project.document)}
 
 
 @mcp.tool(
@@ -203,7 +217,7 @@ async def insert_paragraph(
         "Insert a table with `rows` x `cols` cells. Optionally fill cells "
         "from `data` (row-major; extra rows/cols are ignored). Without "
         "`block_index` the table is appended; otherwise it is inserted at "
-        "that zero-based position. Returns the new block count. After the "
+        "that zero-based position. Returns the new block count as `{block_count}`. After the "
         "requested batch of edits, call `finalize_project` once (not after "
         "each change)."
     ),
@@ -234,7 +248,7 @@ async def insert_table(
     ),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
-) -> int:
+) -> dict[str, int]:
 
     async with project.lock:
 
@@ -259,7 +273,8 @@ async def insert_table(
                 project.document, count_blocks(project.document) - 1, block_index)
 
         _store.touch(user_id, project)
-        return count_blocks(project.document)
+
+        return {"block_count": count_blocks(project.document)}
 
 
 @mcp.tool(
@@ -267,7 +282,7 @@ async def insert_table(
     description=(
         "Insert a page break as a body block. Without `block_index` it is "
         "appended; otherwise it is inserted at that zero-based position. "
-        "Returns the new block count. After the requested batch of edits, "
+        "Returns the new block count as `{block_count}`. After the requested batch of edits, "
         "call `finalize_project` once (not after each change)."
     ),
 )
@@ -281,7 +296,7 @@ async def insert_page_break(
     ),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
-) -> int:
+) -> dict[str, int]:
 
     async with project.lock:
 
@@ -292,7 +307,8 @@ async def insert_page_break(
                 project.document, count_blocks(project.document) - 1, block_index)
 
         _store.touch(user_id, project)
-        return count_blocks(project.document)
+
+        return {"block_count": count_blocks(project.document)}
 
 
 @mcp.tool(
@@ -328,14 +344,15 @@ async def move_block(
     ),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
-) -> int:
+) -> list[BlockInfo]:
 
     async with project.lock:
 
         _move_block(project.document, from_index, to_index)
 
         _store.touch(user_id, project)
-        return count_blocks(project.document)
+
+        return list_block_infos(project.document)
 
 
 @mcp.tool(
@@ -354,7 +371,7 @@ async def remove_blocks(
     ),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
-) -> int:
+) -> dict[str, int]:
 
     async with project.lock:
 
@@ -362,7 +379,7 @@ async def remove_blocks(
 
         _store.touch(user_id, project)
 
-        return count_blocks(project.document)
+        return {"block_count": count_blocks(project.document)}
 
 
 @mcp.tool(
@@ -393,6 +410,7 @@ async def finalize_project(
         await to_thread(project.document.save, buffer)
 
         _store.touch(user_id, project)
+
         block_count = count_blocks(project.document)
 
     uploaded = await upload_file(

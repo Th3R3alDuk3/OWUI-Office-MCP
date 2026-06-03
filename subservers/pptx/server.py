@@ -28,6 +28,7 @@ from subservers.pptx._utils import (
     list_slide_infos,
     list_template_names,
     move_slide as _move_slide,
+    slide_info,
 )
 
 PPTX_MIME = (
@@ -88,7 +89,7 @@ async def list_templates() -> list[str]:
 async def create_project(
     template_name: str = Field(description="From `list_templates`."),
     user_id: str = TokenClaim("id"),
-) -> None:
+) -> str:
 
     templates = await to_thread(list_template_names, _settings.templates_dir)
 
@@ -104,6 +105,12 @@ async def create_project(
     drop_all_slides(presentation)
 
     _store.set(user_id, Project(presentation=presentation))
+
+    return (
+        f"Project created from template '{template_name}'. "
+        "Call `list_masters` and `list_layouts` to see available masters and their layouts, "
+        "then `insert_slide` to add slides."
+    )
 
 
 @mcp.tool(
@@ -125,7 +132,7 @@ async def open_project(
     ),
     token: AccessToken = CurrentAccessToken(),
     user_id: str = TokenClaim("id"),
-) -> None:
+) -> str:
 
     file_content = await download_file(
         file_id=file_id,
@@ -141,6 +148,13 @@ async def open_project(
         ) from error
 
     _store.set(user_id, Project(presentation=presentation))
+
+    return (
+        f"Project opened from attached file '{file_id}'. "
+        "Call `list_masters` and `list_layouts` to see available masters and their layouts, "
+        "or `list_slides` to edit existing ones; "
+        "then `insert_slide` to add slides."
+    )
 
 
 @mcp.tool(
@@ -201,7 +215,7 @@ async def insert_slide(
     ),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
-) -> int:
+) -> dict[str, int]:
 
     async with project.lock:
 
@@ -233,7 +247,8 @@ async def insert_slide(
             )
 
         _store.touch(user_id, project)
-        return count_slides(project.presentation)
+
+        return {"slide_count": count_slides(project.presentation)}
 
 
 @mcp.tool(
@@ -267,7 +282,7 @@ async def edit_slide(
     ),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
-) -> None:
+) -> SlideInfo:
 
     async with project.lock:
 
@@ -283,6 +298,8 @@ async def edit_slide(
                 slide.placeholders[placeholder.idx].text = placeholder.text
 
         _store.touch(user_id, project)
+
+        return slide_info(slide)
 
 
 @mcp.tool(
@@ -303,14 +320,15 @@ async def move_slide(
     ),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
-) -> int:
+) -> list[SlideInfo]:
 
     async with project.lock:
 
         _move_slide(project.presentation, from_index, to_index)
 
         _store.touch(user_id, project)
-        return count_slides(project.presentation)
+
+        return list_slide_infos(project.presentation)
 
 
 @mcp.tool(
@@ -326,7 +344,7 @@ async def remove_slides(
     indices: list[int] = Field(description="Zero-based slide indices."),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
-) -> int:
+) -> dict[str, int]:
 
     async with project.lock:
 
@@ -334,7 +352,7 @@ async def remove_slides(
 
         _store.touch(user_id, project)
 
-        return count_slides(project.presentation)
+        return {"slide_count": count_slides(project.presentation)}
 
 
 @mcp.tool(
@@ -365,6 +383,7 @@ async def finalize_project(
         await to_thread(project.presentation.save, buffer)
 
         _store.touch(user_id, project)
+
         slide_count = count_slides(project.presentation)
 
     uploaded = await upload_file(
