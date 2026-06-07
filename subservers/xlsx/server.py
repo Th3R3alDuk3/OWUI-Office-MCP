@@ -16,7 +16,7 @@ from models.xlsx import (
     ProjectResponse,
     SheetInfo,
 )
-from services.owui import download_file, upload_file
+from services.owui import DOWNLOAD_FILE_URL, download_file, upload_file
 from subservers._store import ProjectStore
 from subservers.xlsx._utils import (
     insert_sheet as _insert_sheet,
@@ -396,7 +396,6 @@ async def finalize_project(
     return ProjectResponse(
         file_name=out_name,
         sheet_count=sheet_count,
-        owui_url=(
-            f"{_settings.owui_base_url}/api/v1/files/{uploaded.id}/content"
-        ),
+        owui_url=DOWNLOAD_FILE_URL.format(
+            base_url=_settings.owui_base_url, file_id=uploaded.id)
     )
