@@ -11,11 +11,14 @@ uv sync
 cp .env.example .env
 ```
 
-In `.env`:
-- `JWT_SECRET` → OpenWebUI's `WEBUI_SECRET_KEY`
-- `OWUI_BASE_URL` → e.g. `http://localhost:3000` (reachable from the MCP server)
+Set the important values in `.env`:
 
-Place templates in [templates/](templates/).
+- `JWT_SECRET` → OpenWebUI's `WEBUI_SECRET_KEY`
+- `OWUI_BASE_URL` → OpenWebUI URL reachable from this server, e.g. `http://localhost:3000`
+- `OWUI_VERIFY_TLS` → set `false` only for self-signed or plain-HTTP lab setups
+
+Place templates in [templates/](templates/) — `list_templates` picks them up
+by extension (`.pptx`, `.docx`, `.xlsx`).
 
 ## ▶️ Run
 
@@ -23,72 +26,90 @@ Place templates in [templates/](templates/).
 uv run python main.py
 ```
 
-Runs as `streamable-http` on `HOST:PORT` from `.env`.
+The server listens on `0.0.0.0:8000`. Point OpenWebUI's MCP/tools config at
+`http://<host>:8000/mcp`. Requests must carry a JWT signed by `JWT_SECRET`
+with the OpenWebUI user's `id` claim.
 
 ## 🐳 Docker (optional)
 
 ```bash
 docker build -t owui-office-mcp .
 
-docker run -d --restart unless-stopped \
--p 8000:8000 \
+docker run -d -p 8000:8000 \
+--restart unless-stopped \
 --env-file .env \
+--name owui-office-mcp
 owui-office-mcp
 ```
 
-Config is read from your `.env` via `--env-file`. `HOST=0.0.0.0` in `.env` makes the server reachable from outside the container, and `TEMPLATES_DIR=./templates` resolves to the templates baked into the image; mount `-v ./templates:/app/templates` to swap them without rebuilding. If OpenWebUI runs on the host, set `OWUI_BASE_URL=http://localhost:3000`.
+Config is read from your `.env` via `--env-file`; to expose a different port,
+change the mapping, e.g. `-p 9000:8000`. `TEMPLATES_DIR=./templates` resolves
+to the templates baked into the image; mount `-v ./templates:/app/templates`
+to swap them without rebuilding. Prebuilt images are published to **ghcr.io**
+on pushes to `main` and on version tags.
 
 ## 🛠️ Tools
 
-Each subserver is mounted under its file extension as a namespace (`pptx_*`, `docx_*`, `xlsx_*`). Per-user state per subserver (JWT claim `id`), sliding TTL, auto-sweep — no disk writes.
+Each subserver is mounted under its file extension as a namespace (`pptx_*`,
+`docx_*`, `xlsx_*`). Per user and toolset there is one in-memory project
+(keyed on the JWT's `id` claim, sliding TTL, auto-sweep — no disk writes).
 
-A project starts one of two ways: from a template (`create_project`) or from an existing file in OpenWebUI (`open_project`). Master/layout/style/sheet discovery then runs against that project, so both branches behave the same.
-
-### `pptx` (11)
+All three toolsets share the same project lifecycle:
 
 | Tool | |
 |---|---|
-| `list_templates` | available `.pptx` templates |
-| `create_project` | empty project from a template |
-| `open_project` | open an existing `.pptx` from OpenWebUI by `file_id` |
+| `list_templates` | available templates for the toolset |
+| `create_project` | new, empty project from a template |
+| `open_project` | open a file attached in OpenWebUI by `file_id` |
+| `finalize_project` | serialize the project and upload it to OpenWebUI |
+
+Discovery (`list_masters`, `list_styles`, `list_sheets`, …) runs against the
+current project, so both starting points behave the same. All `insert_*` and
+`move_*` tools use zero-based indices; inserts append when no index is given.
+Every tool result carries a `hint` with the suggested next step, guiding
+agents through the flow.
+
+### `pptx`
+
+| Tool | |
+|---|---|
 | `list_masters` | slide masters of the current project |
 | `list_layouts` | layouts + placeholders of a master |
-| `insert_slide` | insert a slide from a layout (optionally at an index, otherwise append) |
-| `list_slides` | list slides (index, layout, text) |
+| `insert_slide` | insert a slide from a layout, optionally filling placeholders |
+| `list_slides` | slides in order (layout, text) |
 | `edit_slide` | update placeholders of a slide |
-| `move_slide` | move a slide to a new position by index |
+| `move_slide` | move a slide by index |
 | `remove_slides` | remove slides by index |
-| `finalize_project` | upload the project to OpenWebUI |
 
-### `docx` (11)
-
-| Tool | |
-|---|---|
-| `list_templates` | available `.docx` templates |
-| `create_project` | empty project from a template |
-| `open_project` | open an existing `.docx` from OpenWebUI by `file_id` |
-| `list_styles` | paragraph and table styles of the current project |
-| `insert_paragraph` | insert a paragraph (optionally at an index, otherwise append) |
-| `insert_table` | insert a table (optionally with cell data, optionally at an index) |
-| `insert_page_break` | insert a page break as a body block (optionally at an index) |
-| `list_blocks` | list body blocks (index, type, text preview) |
-| `move_block` | move a body block (paragraph & table) by index |
-| `remove_blocks` | remove body blocks (paragraph & table) by index |
-| `finalize_project` | upload the project to OpenWebUI |
-
-### `xlsx` (12)
+### `docx`
 
 | Tool | |
 |---|---|
-| `list_templates` | available `.xlsx` templates |
-| `create_project` | empty project from a template |
-| `open_project` | open an existing `.xlsx` from OpenWebUI by `file_id` |
-| `list_sheets` | worksheets of the current project (title, rows, cols) |
-| `list_styles` | named cell style names of the current project |
-| `insert_sheet` | add a worksheet (optionally at an index, otherwise append) |
-| `write_rows` | fill a contiguous block (tables / bulk data) from a 2D array at an anchor (optionally styled) |
-| `write_cells` | write scattered individual cells by A1 reference (optionally styled) |
-| `read_sheet` | read a sheet's used range as rows of text |
-| `move_sheet` | move a worksheet to a new position by index |
+| `list_styles` | paragraph and table styles |
+| `insert_paragraph` | insert a styled paragraph |
+| `insert_table` | insert a table, optionally with cell data |
+| `insert_page_break` | insert a page break |
+| `list_blocks` | body blocks in order (type, text preview) |
+| `move_block` | move a body block by index |
+| `remove_blocks` | remove body blocks by index |
+
+### `xlsx`
+
+| Tool | |
+|---|---|
+| `list_sheets` | worksheets (title, used extent) |
+| `list_styles` | named cell styles |
+| `insert_sheet` | add a worksheet |
+| `write_rows` | fill a contiguous block from a 2D array at an anchor |
+| `write_cells` | write individual cells by A1 reference |
+| `read_sheet` | read a sheet's used range as text rows |
+| `move_sheet` | move a worksheet by index |
 | `remove_sheets` | remove worksheets by title |
-| `finalize_project` | upload the project to OpenWebUI |
+
+## 🔒 Limits
+
+- Projects live in memory only: a restart drops open projects, and idle
+  projects expire after `PROJECT_TTL` seconds.
+- Requests are rate-limited per user (token bucket: `RATE_LIMIT_RPS`
+  sustained, `RATE_LIMIT_BURST` burst), keyed on the JWT's `id` claim.
+- The server speaks plain HTTP — put it behind a reverse proxy for TLS.

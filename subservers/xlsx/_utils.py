@@ -9,7 +9,6 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from models.xlsx import CellInput, SheetInfo
 
-
 logger = get_logger(__name__)
 
 
@@ -169,10 +168,13 @@ def write_rows(
     if style is not None and style not in workbook.named_styles:
         raise ValueError(f"Style '{style}' not found.")
 
-    for i1, row in enumerate(rows):
-        for i2, value in enumerate(row):
+    for row_offset, row in enumerate(rows):
+        for col_offset, value in enumerate(row):
 
-            cell = worksheet.cell(row=start_row + i1, column=start_col + i2)
+            cell = worksheet.cell(
+                row=start_row + row_offset,
+                column=start_col + col_offset,
+            )
             cell.value = value
 
             if style is not None:

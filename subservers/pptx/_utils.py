@@ -10,7 +10,6 @@ from pptx.slide import Slide
 
 from models.pptx import LayoutInfo, PlaceholderInfo, SlideInfo
 
-
 logger = get_logger(__name__)
 
 
@@ -142,7 +141,7 @@ def drop_slides(
     slide_id_lst = presentation.slides._sldIdLst
     slide_ids = list(slide_id_lst)
 
-    targets = []
+    targets: list[CT_SlideId] = []
 
     for index in sorted(set(indices)):
         try:
@@ -176,7 +175,7 @@ def move_slide(
     slide_ids = list(slide_id_lst)
 
     try:
-        sld_id = slide_ids[from_index]
+        slide_id = slide_ids[from_index]
     except IndexError:
         raise ValueError(
             f"Slide index {from_index} out of range."
@@ -185,5 +184,5 @@ def move_slide(
     if not -len(slide_ids) <= to_index < len(slide_ids):
         raise ValueError(f"Target index {to_index} out of range.")
 
-    slide_id_lst.remove(sld_id)
-    slide_id_lst.insert(to_index % len(slide_ids), sld_id)
+    slide_id_lst.remove(slide_id)
+    slide_id_lst.insert(to_index % len(slide_ids), slide_id)

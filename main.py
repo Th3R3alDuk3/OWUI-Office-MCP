@@ -1,15 +1,12 @@
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.jwt import JWTVerifier
-from fastmcp.utilities.lifespan import combine_lifespans
+from fastmcp.server.dependencies import get_access_token
+from fastmcp.server.middleware.rate_limiting import RateLimitingMiddleware
 
 from config import get_settings
-from subservers.docx.server import lifespan as docx_lifespan
 from subservers.docx.server import mcp as docx_mcp
-from subservers.pptx.server import lifespan as pptx_lifespan
 from subservers.pptx.server import mcp as pptx_mcp
-from subservers.xlsx.server import lifespan as xlsx_lifespan
 from subservers.xlsx.server import mcp as xlsx_mcp
-
 
 settings = get_settings()
 
@@ -35,7 +32,8 @@ tool exactly once after the user's requested batch of edits is complete. Do
 not call `finalize_project` after every individual change when multiple
 changes belong to one request. If the user later asks for another edit,
 apply that edit batch to the active project and call `finalize_project`
-once again.
+once again. Every tool result includes a `hint` field with the suggested
+next step — follow it unless the user's request says otherwise.
 
 Mounted tool names are prefixed, for example `pptx_finalize_project` and
 `docx_finalize_project`. Tool descriptions may mention local names like
@@ -52,8 +50,17 @@ mcp = FastMCP(
     name="OWUI-Office-MCP",
     instructions=ROOT_INSTRUCTIONS,
     auth=auth,
-    lifespan=combine_lifespans(pptx_lifespan, docx_lifespan, xlsx_lifespan),
 )
+
+mcp.add_middleware(RateLimitingMiddleware(
+    max_requests_per_second=settings.rate_limit_rps,
+    burst_capacity=settings.rate_limit_burst,
+    # OpenWebUI JWTs carry the user in the `id` claim.
+    get_client_id=lambda context: (
+        token.claims.get("id", "anonymous")
+        if (token := get_access_token()) else "anonymous"
+    ),
+))
 
 mcp.mount(pptx_mcp, namespace="pptx")
 mcp.mount(docx_mcp, namespace="docx")
@@ -62,6 +69,8 @@ mcp.mount(xlsx_mcp, namespace="xlsx")
 
 if __name__ == "__main__":
     mcp.run(
-        host=settings.host, port=settings.port,
-        transport="streamable-http",
+        host="0.0.0.0",
+        port=8000,
+        transport="http",
+        host_origin_protection=False,
     )

@@ -5,17 +5,22 @@ from zipfile import BadZipFile
 
 from fastmcp import FastMCP
 from fastmcp.dependencies import CurrentAccessToken, Depends, TokenClaim
+from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AccessToken
 from pptx import Presentation
 from pydantic import Field
 
 from config import get_settings
+from models._base import TemplatesResult
 from models.pptx import (
-    LayoutInfo,
+    FinalizeResult,
+    LayoutsResult,
+    MastersResult,
     PlaceholderText,
     Project,
-    ProjectResponse,
-    SlideInfo,
+    ProjectResult,
+    SlideResult,
+    SlidesResult,
 )
 from services.owui import download_file, upload_file
 from subservers._store import ProjectStore
@@ -35,17 +40,24 @@ PPTX_MIME = (
     "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 )
 
+_EDIT_HINT = (
+    "Continue the edit batch; when the user's request is fully applied, "
+    "call `finalize_project` once."
+)
+
+_FINALIZE_HINT = (
+    "Share `owui_url` with the user as the download link. The project stays "
+    "active; end a later edit batch with `finalize_project` again."
+)
+
 
 _settings = get_settings()
 
-_store = ProjectStore(
+_store = ProjectStore[Project](
     max_size=1_000,
-    ttl=_settings.project_ttl_seconds,
-    sweep_interval=_settings.project_sweep_interval_seconds,
+    ttl=_settings.project_ttl,
+    sweep_interval=_settings.project_sweep_interval,
 )
-
-lifespan = _store.lifespan
-
 
 def _get_project(
     user_id: str = TokenClaim("id"),
@@ -54,7 +66,9 @@ def _get_project(
     project = _store.get(user_id)
 
     if project is None:
-        raise ValueError(
+        # ToolError passes dependency resolution unchanged; other exceptions
+        # get swallowed into a generic "failed to resolve" message.
+        raise ToolError(
             "No project for this user. "
             "Call `create_project` or `open_project` first."
         )
@@ -62,7 +76,7 @@ def _get_project(
     return project
 
 
-mcp = FastMCP(name="pptx")
+mcp = FastMCP(name="pptx", lifespan=_store.lifespan)
 
 
 @mcp.tool(
@@ -73,9 +87,17 @@ mcp = FastMCP(name="pptx")
         "file, use `open_project` instead."
     ),
 )
-async def list_templates() -> list[str]:
-    return await to_thread(
-        list_template_names, _settings.templates_dir)
+async def list_templates() -> TemplatesResult:
+
+    templates = await to_thread(list_template_names, _settings.templates_dir)
+
+    hint = (
+        "Pick a template and call `create_project`."
+    ) if templates else (
+        "No templates available. Ask the administrator to add `.pptx` templates."
+    )
+
+    return TemplatesResult(hint=hint, templates=templates)
 
 
 @mcp.tool(
@@ -89,7 +111,7 @@ async def list_templates() -> list[str]:
 async def create_project(
     template_name: str = Field(description="From `list_templates`."),
     user_id: str = TokenClaim("id"),
-) -> str:
+) -> ProjectResult:
 
     templates = await to_thread(list_template_names, _settings.templates_dir)
 
@@ -106,10 +128,13 @@ async def create_project(
 
     _store.set(user_id, Project(presentation=presentation))
 
-    return (
-        f"Project created from template '{template_name}'. "
-        "Call `list_masters` and `list_layouts` to see available masters and their layouts, "
-        "then `insert_slide` to add slides."
+    return ProjectResult(
+        hint=(
+            f"Empty project created from template '{template_name}'. "
+            "Call `list_masters` and `list_layouts` to see the available "
+            "layouts, then `insert_slide` to add slides."
+        ),
+        slide_count=0,
     )
 
 
@@ -132,12 +157,11 @@ async def open_project(
     ),
     token: AccessToken = CurrentAccessToken(),
     user_id: str = TokenClaim("id"),
-) -> str:
+) -> ProjectResult:
 
-    file_content = await download_file(
+    file_name, file_content = await download_file(
         file_id=file_id,
         token=token.token,
-        base_url=_settings.owui_base_url,
     )
 
     try:
@@ -149,11 +173,13 @@ async def open_project(
 
     _store.set(user_id, Project(presentation=presentation))
 
-    return (
-        f"Project opened from attached file '{file_id}'. "
-        "Call `list_masters` and `list_layouts` to see available masters and their layouts, "
-        "or `list_slides` to edit existing ones; "
-        "then `insert_slide` to add slides."
+    return ProjectResult(
+        hint=(
+            f"Project opened from attached file '{file_name}'. "
+            "Call `list_slides` to edit existing slides, or `list_masters` "
+            "and `list_layouts` to add new ones with `insert_slide`."
+        ),
+        slide_count=count_slides(presentation),
     )
 
 
@@ -166,9 +192,15 @@ async def open_project(
 )
 async def list_masters(
     project: Project = Depends(_get_project),
-) -> dict[int, str]:
+) -> MastersResult:
+
     async with project.lock:
-        return list_master_names(project.presentation)
+        masters = list_master_names(project.presentation)
+
+    return MastersResult(
+        hint="Pick a master index and call `list_layouts`.",
+        masters=masters,
+    )
 
 
 @mcp.tool(
@@ -181,12 +213,21 @@ async def list_masters(
 async def list_layouts(
     master_index: int = Field(description="From `list_masters`."),
     project: Project = Depends(_get_project),
-) -> dict[str, LayoutInfo]:
+) -> LayoutsResult:
+
     async with project.lock:
         try:
-            return list_layout_infos(project.presentation, master_index)
+            layouts = list_layout_infos(project.presentation, master_index)
         except IndexError:
             raise ValueError(f"Master '{master_index}' not found.") from None
+
+    return LayoutsResult(
+        hint=(
+            "Pick a layout and call `insert_slide`, filling its text "
+            "placeholders by `idx`."
+        ),
+        layouts=layouts,
+    )
 
 
 @mcp.tool(
@@ -215,7 +256,7 @@ async def insert_slide(
     ),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
-) -> dict[str, int]:
+) -> ProjectResult:
 
     async with project.lock:
 
@@ -248,7 +289,10 @@ async def insert_slide(
 
         _store.touch(user_id, project)
 
-        return {"slide_count": count_slides(project.presentation)}
+        return ProjectResult(
+            hint=_EDIT_HINT,
+            slide_count=count_slides(project.presentation),
+        )
 
 
 @mcp.tool(
@@ -261,9 +305,19 @@ async def insert_slide(
 )
 async def list_slides(
     project: Project = Depends(_get_project),
-) -> list[SlideInfo]:
+) -> SlidesResult:
+
     async with project.lock:
-        return list_slide_infos(project.presentation)
+        slides = list_slide_infos(project.presentation)
+
+    hint = (
+        "The list position is the zero-based slide index for `edit_slide`, "
+        "`move_slide`, and `remove_slides`."
+    ) if slides else (
+        "No slides yet. Call `insert_slide`."
+    )
+
+    return SlidesResult(hint=hint, slides=slides)
 
 
 @mcp.tool(
@@ -282,7 +336,7 @@ async def edit_slide(
     ),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
-) -> SlideInfo:
+) -> SlideResult:
 
     async with project.lock:
 
@@ -299,7 +353,7 @@ async def edit_slide(
 
         _store.touch(user_id, project)
 
-        return slide_info(slide)
+        return SlideResult(hint=_EDIT_HINT, slide=slide_info(slide))
 
 
 @mcp.tool(
@@ -320,7 +374,7 @@ async def move_slide(
     ),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
-) -> list[SlideInfo]:
+) -> SlidesResult:
 
     async with project.lock:
 
@@ -328,7 +382,10 @@ async def move_slide(
 
         _store.touch(user_id, project)
 
-        return list_slide_infos(project.presentation)
+        return SlidesResult(
+            hint=_EDIT_HINT,
+            slides=list_slide_infos(project.presentation),
+        )
 
 
 @mcp.tool(
@@ -344,7 +401,7 @@ async def remove_slides(
     indices: list[int] = Field(description="Zero-based slide indices."),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
-) -> dict[str, int]:
+) -> ProjectResult:
 
     async with project.lock:
 
@@ -352,7 +409,10 @@ async def remove_slides(
 
         _store.touch(user_id, project)
 
-        return {"slide_count": count_slides(project.presentation)}
+        return ProjectResult(
+            hint=_EDIT_HINT,
+            slide_count=count_slides(project.presentation),
+        )
 
 
 @mcp.tool(
@@ -373,7 +433,7 @@ async def finalize_project(
     token: AccessToken = CurrentAccessToken(),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
-) -> ProjectResponse:
+) -> FinalizeResult:
 
     async with project.lock:
 
@@ -391,13 +451,11 @@ async def finalize_project(
         data=buffer.getvalue(),
         content_type=PPTX_MIME,
         token=token.token,
-        base_url=_settings.owui_base_url,
     )
 
-    return ProjectResponse(
+    return FinalizeResult(
+        hint=_FINALIZE_HINT,
         file_name=out_name,
         slide_count=slide_count,
-        owui_url=(
-            f"{_settings.owui_base_url}/api/v1/files/{uploaded.id}/content"
-        ),
+        owui_url=uploaded.download_url,
     )

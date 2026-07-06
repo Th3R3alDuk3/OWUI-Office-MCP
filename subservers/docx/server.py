@@ -6,11 +6,19 @@ from docx import Document
 from docx.enum.style import WD_STYLE_TYPE
 from fastmcp import FastMCP
 from fastmcp.dependencies import CurrentAccessToken, Depends, TokenClaim
+from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AccessToken
 from pydantic import Field
 
 from config import get_settings
-from models.docx import BlockInfo, Project, ProjectResponse, StyleInfo
+from models._base import TemplatesResult
+from models.docx import (
+    BlocksResult,
+    FinalizeResult,
+    Project,
+    ProjectResult,
+    StylesResult,
+)
 from services.owui import download_file, upload_file
 from subservers._store import ProjectStore
 from subservers.docx._utils import (
@@ -27,17 +35,24 @@ DOCX_MIME = (
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 )
 
+_EDIT_HINT = (
+    "Continue the edit batch; when the user's request is fully applied, "
+    "call `finalize_project` once."
+)
+
+_FINALIZE_HINT = (
+    "Share `owui_url` with the user as the download link. The project stays "
+    "active; end a later edit batch with `finalize_project` again."
+)
+
 
 _settings = get_settings()
 
-_store = ProjectStore(
+_store = ProjectStore[Project](
     max_size=1_000,
-    ttl=_settings.project_ttl_seconds,
-    sweep_interval=_settings.project_sweep_interval_seconds,
+    ttl=_settings.project_ttl,
+    sweep_interval=_settings.project_sweep_interval,
 )
-
-lifespan = _store.lifespan
-
 
 def _get_project(
     user_id: str = TokenClaim("id"),
@@ -46,7 +61,9 @@ def _get_project(
     project = _store.get(user_id)
 
     if project is None:
-        raise ValueError(
+        # ToolError passes dependency resolution unchanged; other exceptions
+        # get swallowed into a generic "failed to resolve" message.
+        raise ToolError(
             "No project for this user. "
             "Call `create_project` or `open_project` first."
         )
@@ -54,7 +71,7 @@ def _get_project(
     return project
 
 
-mcp = FastMCP(name="docx")
+mcp = FastMCP(name="docx", lifespan=_store.lifespan)
 
 
 @mcp.tool(
@@ -65,9 +82,17 @@ mcp = FastMCP(name="docx")
         "file, use `open_project` instead."
     ),
 )
-async def list_templates() -> list[str]:
-    return await to_thread(
-        list_template_names, _settings.templates_dir)
+async def list_templates() -> TemplatesResult:
+
+    templates = await to_thread(list_template_names, _settings.templates_dir)
+
+    hint = (
+        "Pick a template and call `create_project`."
+    ) if templates else (
+        "No templates available. Ask the administrator to add `.docx` templates."
+    )
+
+    return TemplatesResult(hint=hint, templates=templates)
 
 
 @mcp.tool(
@@ -81,7 +106,7 @@ async def list_templates() -> list[str]:
 async def create_project(
     template_name: str = Field(description="From `list_templates`."),
     user_id: str = TokenClaim("id"),
-) -> str:
+) -> ProjectResult:
 
     templates = await to_thread(list_template_names, _settings.templates_dir)
 
@@ -98,10 +123,13 @@ async def create_project(
 
     _store.set(user_id, Project(document=document))
 
-    return (
-        f"Project created from template '{template_name}'. "
-        "Call `list_styles` to see available styles, "
-        "then `insert_paragraph` / `insert_table` to edit it."
+    return ProjectResult(
+        hint=(
+            f"Empty project created from template '{template_name}'. "
+            "Call `list_styles` to see the available styles, then "
+            "`insert_paragraph` / `insert_table` to add content."
+        ),
+        block_count=0,
     )
 
 
@@ -124,12 +152,11 @@ async def open_project(
     ),
     token: AccessToken = CurrentAccessToken(),
     user_id: str = TokenClaim("id"),
-) -> str:
+) -> ProjectResult:
 
-    file_content = await download_file(
+    file_name, file_content = await download_file(
         file_id=file_id,
         token=token.token,
-        base_url=_settings.owui_base_url,
     )
 
     try:
@@ -141,11 +168,13 @@ async def open_project(
 
     _store.set(user_id, Project(document=document))
 
-    return (
-        f"Project opened from attached file '{file_id}'. "
-        "Call `list_styles` to see available styles, "
-        "or `list_blocks` to reorder or remove existing ones; "
-        "then `insert_paragraph` / `insert_table` to add blocks."
+    return ProjectResult(
+        hint=(
+            f"Project opened from attached file '{file_name}'. "
+            "Call `list_blocks` to see the existing content, or `list_styles` "
+            "before adding blocks with `insert_paragraph` / `insert_table`."
+        ),
+        block_count=count_blocks(document),
     )
 
 
@@ -158,9 +187,18 @@ async def open_project(
 )
 async def list_styles(
     project: Project = Depends(_get_project),
-) -> dict[str, StyleInfo]:
+) -> StylesResult:
+
     async with project.lock:
-        return list_style_infos(project.document)
+        styles = list_style_infos(project.document)
+
+    return StylesResult(
+        hint=(
+            "Use a paragraph style with `insert_paragraph` and a table style "
+            "with `insert_table`."
+        ),
+        styles=styles,
+    )
 
 
 @mcp.tool(
@@ -169,9 +207,8 @@ async def list_styles(
         "Insert a paragraph. Use a paragraph style from `list_styles` (e.g. "
         "`Heading 1`, `Normal`) to control formatting. Without `block_index` "
         "the paragraph is appended; otherwise it is inserted at that "
-        "zero-based position. Returns the new block count as `{block_count}`. After the "
-        "requested batch of edits, call `finalize_project` once (not after "
-        "each change)."
+        "zero-based position. After the requested batch of edits, call "
+        "`finalize_project` once (not after each change)."
     ),
 )
 async def insert_paragraph(
@@ -189,7 +226,7 @@ async def insert_paragraph(
     ),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
-) -> dict[str, int]:
+) -> ProjectResult:
 
     async with project.lock:
 
@@ -204,11 +241,17 @@ async def insert_paragraph(
 
         if block_index is not None:
             _move_block(
-                project.document, count_blocks(project.document) - 1, block_index)
+                project.document,
+                count_blocks(project.document) - 1,
+                block_index,
+            )
 
         _store.touch(user_id, project)
 
-        return {"block_count": count_blocks(project.document)}
+        return ProjectResult(
+            hint=_EDIT_HINT,
+            block_count=count_blocks(project.document),
+        )
 
 
 @mcp.tool(
@@ -217,9 +260,8 @@ async def insert_paragraph(
         "Insert a table with `rows` x `cols` cells. Optionally fill cells "
         "from `data` (row-major; extra rows/cols are ignored). Without "
         "`block_index` the table is appended; otherwise it is inserted at "
-        "that zero-based position. Returns the new block count as `{block_count}`. After the "
-        "requested batch of edits, call `finalize_project` once (not after "
-        "each change)."
+        "that zero-based position. After the requested batch of edits, call "
+        "`finalize_project` once (not after each change)."
     ),
 )
 async def insert_table(
@@ -248,7 +290,7 @@ async def insert_table(
     ),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
-) -> dict[str, int]:
+) -> ProjectResult:
 
     async with project.lock:
 
@@ -270,11 +312,17 @@ async def insert_table(
 
         if block_index is not None:
             _move_block(
-                project.document, count_blocks(project.document) - 1, block_index)
+                project.document,
+                count_blocks(project.document) - 1,
+                block_index,
+            )
 
         _store.touch(user_id, project)
 
-        return {"block_count": count_blocks(project.document)}
+        return ProjectResult(
+            hint=_EDIT_HINT,
+            block_count=count_blocks(project.document),
+        )
 
 
 @mcp.tool(
@@ -282,8 +330,8 @@ async def insert_table(
     description=(
         "Insert a page break as a body block. Without `block_index` it is "
         "appended; otherwise it is inserted at that zero-based position. "
-        "Returns the new block count as `{block_count}`. After the requested batch of edits, "
-        "call `finalize_project` once (not after each change)."
+        "After the requested batch of edits, call `finalize_project` once "
+        "(not after each change)."
     ),
 )
 async def insert_page_break(
@@ -296,7 +344,7 @@ async def insert_page_break(
     ),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
-) -> dict[str, int]:
+) -> ProjectResult:
 
     async with project.lock:
 
@@ -304,11 +352,17 @@ async def insert_page_break(
 
         if block_index is not None:
             _move_block(
-                project.document, count_blocks(project.document) - 1, block_index)
+                project.document,
+                count_blocks(project.document) - 1,
+                block_index,
+            )
 
         _store.touch(user_id, project)
 
-        return {"block_count": count_blocks(project.document)}
+        return ProjectResult(
+            hint=_EDIT_HINT,
+            block_count=count_blocks(project.document),
+        )
 
 
 @mcp.tool(
@@ -321,9 +375,19 @@ async def insert_page_break(
 )
 async def list_blocks(
     project: Project = Depends(_get_project),
-) -> list[BlockInfo]:
+) -> BlocksResult:
+
     async with project.lock:
-        return list_block_infos(project.document)
+        blocks = list_block_infos(project.document)
+
+    hint = (
+        "The list position is the zero-based block index for `move_block` "
+        "and `remove_blocks`."
+    ) if blocks else (
+        "No blocks yet. Call `insert_paragraph` or `insert_table`."
+    )
+
+    return BlocksResult(hint=hint, blocks=blocks)
 
 
 @mcp.tool(
@@ -344,7 +408,7 @@ async def move_block(
     ),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
-) -> list[BlockInfo]:
+) -> BlocksResult:
 
     async with project.lock:
 
@@ -352,7 +416,10 @@ async def move_block(
 
         _store.touch(user_id, project)
 
-        return list_block_infos(project.document)
+        return BlocksResult(
+            hint=_EDIT_HINT,
+            blocks=list_block_infos(project.document),
+        )
 
 
 @mcp.tool(
@@ -371,7 +438,7 @@ async def remove_blocks(
     ),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
-) -> dict[str, int]:
+) -> ProjectResult:
 
     async with project.lock:
 
@@ -379,7 +446,10 @@ async def remove_blocks(
 
         _store.touch(user_id, project)
 
-        return {"block_count": count_blocks(project.document)}
+        return ProjectResult(
+            hint=_EDIT_HINT,
+            block_count=count_blocks(project.document),
+        )
 
 
 @mcp.tool(
@@ -400,7 +470,7 @@ async def finalize_project(
     token: AccessToken = CurrentAccessToken(),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
-) -> ProjectResponse:
+) -> FinalizeResult:
 
     async with project.lock:
 
@@ -418,13 +488,11 @@ async def finalize_project(
         data=buffer.getvalue(),
         content_type=DOCX_MIME,
         token=token.token,
-        base_url=_settings.owui_base_url,
     )
 
-    return ProjectResponse(
+    return FinalizeResult(
+        hint=_FINALIZE_HINT,
         file_name=out_name,
         block_count=block_count,
-        owui_url=(
-            f"{_settings.owui_base_url}/api/v1/files/{uploaded.id}/content"
-        ),
+        owui_url=uploaded.download_url,
     )

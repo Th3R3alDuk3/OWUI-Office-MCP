@@ -1,4 +1,4 @@
-from functools import lru_cache
+from functools import cache
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -11,20 +11,22 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    host: str
-    port: int
-
-    templates_dir: Path
-
     jwt_secret: str
     jwt_algorithm: str
 
     owui_base_url: str
+    owui_verify_tls: bool
 
-    project_ttl_seconds: int
-    project_sweep_interval_seconds: int
+    rate_limit_rps: float
+    rate_limit_burst: int
+
+    templates_dir: Path
+
+    # seconds
+    project_ttl: int
+    project_sweep_interval: int
 
 
-@lru_cache(maxsize=1)
+@cache
 def get_settings() -> Settings:
     return Settings()

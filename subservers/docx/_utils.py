@@ -9,7 +9,6 @@ from fastmcp.utilities.logging import get_logger
 
 from models.docx import BlockInfo, StyleInfo
 
-
 logger = get_logger(__name__)
 
 
@@ -55,7 +54,7 @@ def list_style_infos(
     return style_infos
 
 
-def _content_blocks(
+def _block_elements(
     document: DocumentType,
 ) -> list:
 
@@ -71,7 +70,7 @@ def _content_blocks(
 def count_blocks(
     document: DocumentType,
 ) -> int:
-    return len(_content_blocks(document))
+    return len(_block_elements(document))
 
 
 def content_blocks(
@@ -82,7 +81,7 @@ def content_blocks(
 
     blocks: list = []
 
-    for child in _content_blocks(document):
+    for child in _block_elements(document):
 
         if child.tag == f"{_W_NS}p":
             blocks.append(Paragraph(child, body))
@@ -103,16 +102,14 @@ def list_block_infos(
     for block in content_blocks(document):
 
         if isinstance(block, Paragraph):
-            block_infos.append(
-                BlockInfo(type="paragraph", text=block.text))
-
+            block_infos.append(BlockInfo(type="paragraph", text=block.text))
         elif isinstance(block, Table):
-            block_infos.append(
-                BlockInfo(type="table",
-                    text=f"{len(block.rows)}x{len(block.columns)} table"))
+            block_infos.append(BlockInfo(
+                type="table",
+                text=f"{len(block.rows)}x{len(block.columns)} table",
+            ))
         else:
-            block_infos.append(
-                BlockInfo(type=block.tag, text=""))
+            block_infos.append(BlockInfo(type=block.tag, text=""))
 
     return block_infos
 
@@ -122,7 +119,7 @@ def drop_blocks(
     indices: list[int],
 ) -> None:
 
-    blocks = _content_blocks(document)
+    blocks = _block_elements(document)
     body = document.element.body
 
     targets: list = []
@@ -142,7 +139,7 @@ def drop_blocks(
 def drop_all_blocks(
     document: DocumentType,
 ) -> None:
-    for block in _content_blocks(document):
+    for block in _block_elements(document):
         document.element.body.remove(block)
 
 
@@ -153,7 +150,7 @@ def move_block(
 ) -> None:
 
     body = document.element.body
-    blocks = _content_blocks(document)
+    blocks = _block_elements(document)
 
     try:
         block = blocks[from_index]
