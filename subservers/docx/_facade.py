@@ -193,7 +193,7 @@ def script_functions(
         _ops.move_block(document, from_index, to_index)
 
     def remove_blocks(indices: list[int]) -> None:
-        _ops.drop_blocks(document, indices)
+        _ops.remove_blocks(document, indices)
 
     return {
         "add_paragraph": add_paragraph,

@@ -81,16 +81,16 @@ def script_functions(
         _ops.insert_picture(workbook, sheet, BytesIO(chart_png), anchor)
 
     def read_sheet(sheet: str) -> list[list[str]]:
-        return _ops.read_sheet_rows(workbook, sheet)
+        return _ops.read_sheet(workbook, sheet)
 
     def add_sheet(title: str, index: int | None = None) -> None:
-        _ops.insert_sheet(workbook, title, index)
+        _ops.add_sheet(workbook, title, index)
 
     def move_sheet(title: str, to_index: int) -> None:
         _ops.move_sheet(workbook, title, to_index)
 
     def remove_sheets(titles: list[str]) -> None:
-        _ops.drop_sheets(workbook, titles)
+        _ops.remove_sheets(workbook, titles)
 
     def list_sheets() -> list[dict]:
         return [

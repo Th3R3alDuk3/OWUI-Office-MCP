@@ -167,7 +167,7 @@ def script_functions(
         _ops.move_slide(presentation, from_index, to_index)
 
     def remove_slides(indices: list[int]) -> None:
-        _ops.drop_slides(presentation, indices)
+        _ops.remove_slides(presentation, indices)
 
     return {
         "add_slide": add_slide,

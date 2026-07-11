@@ -93,7 +93,7 @@ def _get_sheet(
         ) from None
 
 
-def read_sheet_rows(
+def read_sheet(
     workbook: WorkbookType,
     sheet_title: str,
 ) -> list[list[str]]:
@@ -198,7 +198,7 @@ def clear_workbook(
     keep.title = "Sheet"
 
 
-def insert_sheet(
+def add_sheet(
     workbook: WorkbookType,
     title: str,
     index: int | None,
@@ -210,7 +210,7 @@ def insert_sheet(
     workbook.create_sheet(title=title, index=index)
 
 
-def drop_sheets(
+def remove_sheets(
     workbook: WorkbookType,
     titles: list[str],
 ) -> None:

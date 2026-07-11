@@ -178,7 +178,7 @@ def clear_presentation(
         _detach_slide(presentation, slide_id_lst, slide_id)
 
 
-def drop_slides(
+def remove_slides(
     presentation: PresentationType,
     indices: list[int],
 ) -> None:

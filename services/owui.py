@@ -23,12 +23,12 @@ async def download_file(
 ) -> bytes:
 
     try:
-
         async with _client() as client:
-
             response = await client.get(
                 url=_FILE_DOWNLOAD_URL.format(
-                    base_url=_settings.owui_base_url, file_id=file_id),
+                    base_url=_settings.owui_base_url,
+                    file_id=file_id,
+                ),
                 headers={"Authorization": f"Bearer {token}"},
             )
             response.raise_for_status()
@@ -51,29 +51,28 @@ async def upload_file(
     content_type: str,
     token: str,
 ) -> str:
-    """Upload a file and return its OpenWebUI download URL."""
 
     try:
-
         async with _client() as client:
             response = await client.post(
                 url=_FILE_UPLOAD_URL.format(
-                    base_url=_settings.owui_base_url),
+                    base_url=_settings.owui_base_url,
+                ),
                 headers={"Authorization": f"Bearer {token}"},
                 files={"file": (file_name, data, content_type)},
             )
-
-        response.raise_for_status()
+            response.raise_for_status()
 
         file_id = response.json().get("id")
 
         if not file_id:
             raise RuntimeError(
-                "OpenWebUI upload response carries no file id."
-            )
+                "OpenWebUI upload response carries no file id.")
 
         return _FILE_DOWNLOAD_URL.format(
-            base_url=_settings.owui_base_url, file_id=file_id)
+            base_url=_settings.owui_base_url,
+            file_id=file_id,
+        )
 
     except HTTPStatusError as error:
         raise RuntimeError(

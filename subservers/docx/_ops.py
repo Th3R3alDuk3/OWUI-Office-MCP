@@ -186,7 +186,7 @@ def clear_document(
         document.element.body.remove(block)
 
 
-def drop_blocks(
+def remove_blocks(
     document: DocumentType,
     indices: list[int],
 ) -> None:
