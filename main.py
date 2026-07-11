@@ -27,13 +27,15 @@ toolset:
   a template name from `list_templates`, and never invented.
 
 Workflow: start a project with `create_project` or `open_project`, build or
-edit it with the mutation tools, then call the matching `finalize_project`
-tool exactly once after the user's requested batch of edits is complete. Do
-not call `finalize_project` after every individual change when multiple
-changes belong to one request. If the user later asks for another edit,
-apply that edit batch to the active project and call `finalize_project`
-once again. Every tool result includes a `hint` field with the suggested
-next step — follow it unless the user's request says otherwise.
+edit it with `run_script` — one Python script per edit batch, written
+against the sandboxed functions documented in the `run_script` tool — then
+call the matching `finalize_project` tool exactly once after the user's
+requested batch of edits is complete. Do not call `finalize_project` after
+every individual change when multiple changes belong to one request. If the
+user later asks for another edit, apply that edit batch to the active
+project and call `finalize_project` once again. Every tool result includes
+a `hint` field with the suggested next step — follow it unless the user's
+request says otherwise.
 
 Mounted tool names are prefixed, for example `pptx_finalize_project` and
 `docx_finalize_project`. Tool descriptions may mention local names like
@@ -73,5 +75,4 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=8000,
         transport="http",
-        host_origin_protection=False,
     )

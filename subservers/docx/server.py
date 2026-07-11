@@ -3,7 +3,6 @@ from io import BytesIO
 from zipfile import BadZipFile
 
 from docx import Document
-from docx.enum.style import WD_STYLE_TYPE
 from fastmcp import FastMCP
 from fastmcp.dependencies import CurrentAccessToken, Depends, TokenClaim
 from fastmcp.exceptions import ToolError
@@ -13,25 +12,23 @@ from pydantic import Field
 from config import get_settings
 from models._base import TemplatesResult
 from models.docx import (
-    BlocksResult,
     FinalizeResult,
     Project,
-    ProjectResult,
-    StylesResult,
+    ScriptResult,
+    StartResult,
 )
 from services.owui import download_file, upload_file
+from subservers._sandbox import run_sandboxed
 from subservers._store import ProjectStore
-from subservers.docx._utils import (
+from subservers.docx._facade import SCRIPT_API, script_functions
+from subservers.docx._ops import (
+    clear_document,
     count_blocks,
-    drop_all_blocks,
-    drop_blocks,
-    list_block_infos,
     list_style_infos,
     list_template_names,
-    move_block as _move_block,
 )
 
-DOCX_MIME = (
+_DOCX_MIME = (
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 )
 
@@ -53,6 +50,7 @@ _store = ProjectStore[Project](
     ttl=_settings.project_ttl,
     sweep_interval=_settings.project_sweep_interval,
 )
+
 
 def _get_project(
     user_id: str = TokenClaim("id"),
@@ -100,13 +98,14 @@ async def list_templates() -> TemplatesResult:
     description=(
         "Create a new, empty in-memory project from a template. Use this by "
         "default when the user did NOT attach a file. Overwrites any existing "
-        "project for the user. Then call `list_styles`."
+        "project for the user. The result lists the template's styles for "
+        "`run_script`."
     ),
 )
 async def create_project(
     template_name: str = Field(description="From `list_templates`."),
     user_id: str = TokenClaim("id"),
-) -> ProjectResult:
+) -> StartResult:
 
     templates = await to_thread(list_template_names, _settings.templates_dir)
 
@@ -119,17 +118,17 @@ async def create_project(
     template_file = _settings.templates_dir.joinpath(template_name)
 
     document = await to_thread(Document, template_file)
-    drop_all_blocks(document)
+    clear_document(document)
 
     _store.set(user_id, Project(document=document))
 
-    return ProjectResult(
+    return StartResult(
         hint=(
             f"Empty project created from template '{template_name}'. "
-            "Call `list_styles` to see the available styles, then "
-            "`insert_paragraph` / `insert_table` to add content."
+            "Build the document with `run_script`, using the styles below."
         ),
         block_count=0,
+        styles=list_style_infos(document),
     )
 
 
@@ -139,8 +138,7 @@ async def create_project(
         "Open a `.docx` the user attached in OpenWebUI, by its `file_id`. Use "
         "only when the user actually attached a file; if none was given, use "
         "`create_project` instead. Overwrites any existing project for the "
-        "user. Then call `list_styles` to add blocks, or `list_blocks` to "
-        "reorder or remove existing ones."
+        "user. The result lists the file's styles for `run_script`."
     ),
 )
 async def open_project(
@@ -152,7 +150,7 @@ async def open_project(
     ),
     token: AccessToken = CurrentAccessToken(),
     user_id: str = TokenClaim("id"),
-) -> ProjectResult:
+) -> StartResult:
 
     file_content = await download_file(
         file_id=file_id,
@@ -168,287 +166,41 @@ async def open_project(
 
     _store.set(user_id, Project(document=document))
 
-    return ProjectResult(
+    return StartResult(
         hint=(
             f"Project opened from attached file '{file_id}'. "
-            "Call `list_blocks` to see the existing content, or `list_styles` "
-            "before adding blocks with `insert_paragraph` / `insert_table`."
+            "Inspect and edit it with `run_script` (`list_blocks()` shows "
+            "the existing content), using the styles below for new blocks."
         ),
         block_count=count_blocks(document),
+        styles=list_style_infos(document),
     )
 
 
 @mcp.tool(
-    name="list_styles",
-    description=(
-        "List the paragraph and table styles of the current project (name -> "
-        "type, builtin). Then call `insert_paragraph` / `insert_table`."
-    ),
+    name="run_script",
+    description=SCRIPT_API,
 )
-async def list_styles(
-    project: Project = Depends(_get_project),
-) -> StylesResult:
-
-    async with project.lock:
-        styles = list_style_infos(project.document)
-
-    return StylesResult(
-        hint=(
-            "Use a paragraph style with `insert_paragraph` and a table style "
-            "with `insert_table`."
-        ),
-        styles=styles,
-    )
-
-
-@mcp.tool(
-    name="insert_paragraph",
-    description=(
-        "Insert a paragraph. Use a paragraph style from `list_styles` (e.g. "
-        "`Heading 1`, `Normal`) to control formatting. Without `block_index` "
-        "the paragraph is appended; otherwise it is inserted at that "
-        "zero-based position. After the requested batch of edits, call "
-        "`finalize_project` once (not after each change)."
-    ),
-)
-async def insert_paragraph(
-    text: str = Field(description="Paragraph text."),
-    style: str | None = Field(
-        default=None,
-        description="Paragraph style name from `list_styles`. None = default.",
-    ),
-    block_index: int | None = Field(
-        default=None,
-        description=(
-            "Zero-based position to insert at. If omitted, the block is "
-            "appended at the end."
-        ),
-    ),
+async def run_script(
+    code: str = Field(description="Python script for the sandbox."),
+    token: AccessToken = CurrentAccessToken(),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
-) -> ProjectResult:
+) -> ScriptResult:
 
     async with project.lock:
 
-        try:
-            project.document.styles.get_style_id(style, WD_STYLE_TYPE.PARAGRAPH)
-        except (KeyError, ValueError):
-            raise ValueError(
-                f"Style '{style}' not found."
-            ) from None
-
-        project.document.add_paragraph(text, style=style)
-
-        if block_index is not None:
-            _move_block(
-                project.document,
-                count_blocks(project.document) - 1,
-                block_index,
-            )
-
-        _store.touch(user_id, project)
-
-        return ProjectResult(
-            hint=_EDIT_HINT,
-            block_count=count_blocks(project.document),
+        output = await run_sandboxed(
+            code,
+            functions=script_functions(project.document, token.token),
         )
 
-
-@mcp.tool(
-    name="insert_table",
-    description=(
-        "Insert a table with `rows` x `cols` cells. Optionally fill cells "
-        "from `data` (row-major; extra rows/cols are ignored). Without "
-        "`block_index` the table is appended; otherwise it is inserted at "
-        "that zero-based position. After the requested batch of edits, call "
-        "`finalize_project` once (not after each change)."
-    ),
-)
-async def insert_table(
-    rows: int = Field(
-        gt=0, le=50,
-        description="Number of rows."
-    ),
-    cols: int = Field(
-        gt=0, le=10,
-        description="Number of columns."
-    ),
-    style: str | None = Field(
-        default=None,
-        description="Table style name from `list_styles`. None = default.",
-    ),
-    data: list[list[str]] = Field(
-        default_factory=list,
-        description="Row-major cell text. Missing cells stay empty.",
-    ),
-    block_index: int | None = Field(
-        default=None,
-        description=(
-            "Zero-based position to insert at. If omitted, the block is "
-            "appended at the end."
-        ),
-    ),
-    user_id: str = TokenClaim("id"),
-    project: Project = Depends(_get_project),
-) -> ProjectResult:
-
-    async with project.lock:
-
-        try:
-            project.document.styles.get_style_id(style, WD_STYLE_TYPE.TABLE)
-        except (KeyError, ValueError):
-            raise ValueError(
-                f"Style '{style}' not found."
-            ) from None
-
-        table = project.document.add_table(rows=rows, cols=cols)
-
-        if style is not None:
-            table.style = style
-
-        for r, row_data in enumerate(data[:rows]):
-            for c, cell_text in enumerate(row_data[:cols]):
-                table.cell(r, c).text = cell_text
-
-        if block_index is not None:
-            _move_block(
-                project.document,
-                count_blocks(project.document) - 1,
-                block_index,
-            )
-
         _store.touch(user_id, project)
 
-        return ProjectResult(
+        return ScriptResult(
             hint=_EDIT_HINT,
             block_count=count_blocks(project.document),
-        )
-
-
-@mcp.tool(
-    name="insert_page_break",
-    description=(
-        "Insert a page break as a body block. Without `block_index` it is "
-        "appended; otherwise it is inserted at that zero-based position. "
-        "After the requested batch of edits, call `finalize_project` once "
-        "(not after each change)."
-    ),
-)
-async def insert_page_break(
-    block_index: int | None = Field(
-        default=None,
-        description=(
-            "Zero-based position to insert at. If omitted, the block is "
-            "appended at the end."
-        ),
-    ),
-    user_id: str = TokenClaim("id"),
-    project: Project = Depends(_get_project),
-) -> ProjectResult:
-
-    async with project.lock:
-
-        project.document.add_page_break()
-
-        if block_index is not None:
-            _move_block(
-                project.document,
-                count_blocks(project.document) - 1,
-                block_index,
-            )
-
-        _store.touch(user_id, project)
-
-        return ProjectResult(
-            hint=_EDIT_HINT,
-            block_count=count_blocks(project.document),
-        )
-
-
-@mcp.tool(
-    name="list_blocks",
-    description=(
-        "List the current body blocks in order. The list position is the "
-        "zero-based index; each entry has a type (`paragraph` or `table`) and "
-        "a text preview. Use it to target `move_block` or `remove_blocks`."
-    ),
-)
-async def list_blocks(
-    project: Project = Depends(_get_project),
-) -> BlocksResult:
-
-    async with project.lock:
-        blocks = list_block_infos(project.document)
-
-    hint = (
-        "The list position is the zero-based block index for `move_block` "
-        "and `remove_blocks`."
-    ) if blocks else (
-        "No blocks yet. Call `insert_paragraph` or `insert_table`."
-    )
-
-    return BlocksResult(hint=hint, blocks=blocks)
-
-
-@mcp.tool(
-    name="move_block",
-    description=(
-        "Move a body block (paragraph or table) to a new position by "
-        "zero-based index. Negative `to_index` counts from the end. Changes "
-        "stay in memory only. After the requested batch of edits, call "
-        "`finalize_project` once (not after each change)."
-    ),
-)
-async def move_block(
-    from_index: int = Field(
-        description="Zero-based current block index.",
-    ),
-    to_index: int = Field(
-        description="Zero-based target block index.",
-    ),
-    user_id: str = TokenClaim("id"),
-    project: Project = Depends(_get_project),
-) -> BlocksResult:
-
-    async with project.lock:
-
-        _move_block(project.document, from_index, to_index)
-
-        _store.touch(user_id, project)
-
-        return BlocksResult(
-            hint=_EDIT_HINT,
-            blocks=list_block_infos(project.document),
-        )
-
-
-@mcp.tool(
-    name="remove_blocks",
-    description=(
-        "Remove body blocks (paragraphs and tables) by zero-based index "
-        "(from `list_blocks`). Indices refer to positions before removal; "
-        "duplicates are ignored. Changes stay in memory only. After the "
-        "requested batch of edits, call `finalize_project` once (not after "
-        "each change)."
-    ),
-)
-async def remove_blocks(
-    indices: list[int] = Field(
-        description="Zero-based block indices."
-    ),
-    user_id: str = TokenClaim("id"),
-    project: Project = Depends(_get_project),
-) -> ProjectResult:
-
-    async with project.lock:
-
-        drop_blocks(project.document, indices)
-
-        _store.touch(user_id, project)
-
-        return ProjectResult(
-            hint=_EDIT_HINT,
-            block_count=count_blocks(project.document),
+            output=output,
         )
 
 
@@ -474,7 +226,7 @@ async def finalize_project(
 
     async with project.lock:
 
-        out_name = f"{file_name}.docx"
+        upload_name = f"{file_name}.docx"
 
         buffer = BytesIO()
         await to_thread(project.document.save, buffer)
@@ -483,16 +235,16 @@ async def finalize_project(
 
         block_count = count_blocks(project.document)
 
-    uploaded = await upload_file(
-        file_name=out_name,
+    owui_url = await upload_file(
+        file_name=upload_name,
         data=buffer.getvalue(),
-        content_type=DOCX_MIME,
+        content_type=_DOCX_MIME,
         token=token.token,
     )
 
     return FinalizeResult(
         hint=_FINALIZE_HINT,
-        file_name=out_name,
+        file_name=upload_name,
         block_count=block_count,
-        owui_url=uploaded.download_url,
+        owui_url=owui_url,
     )

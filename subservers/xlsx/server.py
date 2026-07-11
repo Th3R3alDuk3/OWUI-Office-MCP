@@ -13,32 +13,24 @@ from pydantic import Field
 from config import get_settings
 from models._base import TemplatesResult
 from models.xlsx import (
-    CellInput,
     FinalizeResult,
     Project,
-    ProjectResult,
-    ReadResult,
-    SheetsResult,
-    StylesResult,
-    WriteResult,
+    ScriptResult,
+    StartResult,
 )
 from services.owui import download_file, upload_file
+from subservers._sandbox import run_sandboxed
 from subservers._store import ProjectStore
-from subservers.xlsx._utils import (
+from subservers.xlsx._facade import SCRIPT_API, script_functions
+from subservers.xlsx._ops import (
     autofit_columns,
     clear_workbook,
     count_sheets,
-    drop_sheets,
-    insert_sheet as _insert_sheet,
     list_sheet_infos,
     list_template_names,
-    move_sheet as _move_sheet,
-    read_sheet_rows,
-    write_cells as _write_cells,
-    write_rows as _write_rows,
 )
 
-XLSX_MIME = (
+_XLSX_MIME = (
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
 
@@ -60,6 +52,7 @@ _store = ProjectStore[Project](
     ttl=_settings.project_ttl,
     sweep_interval=_settings.project_sweep_interval,
 )
+
 
 def _get_project(
     user_id: str = TokenClaim("id"),
@@ -107,13 +100,14 @@ async def list_templates() -> TemplatesResult:
     description=(
         "Create a new, empty in-memory project from a template. Use this by "
         "default when the user did NOT attach a file. Overwrites any existing "
-        "project for the user. Then call `list_sheets`."
+        "project for the user. The result lists the template's named styles "
+        "for `run_script`."
     ),
 )
 async def create_project(
     template_name: str = Field(description="From `list_templates`."),
     user_id: str = TokenClaim("id"),
-) -> ProjectResult:
+) -> StartResult:
 
     templates = await to_thread(list_template_names, _settings.templates_dir)
 
@@ -130,13 +124,15 @@ async def create_project(
 
     _store.set(user_id, Project(workbook=workbook))
 
-    return ProjectResult(
+    return StartResult(
         hint=(
             f"Empty project created from template '{template_name}' with one "
-            "sheet 'Sheet'. Call `list_styles` for the available styles, then "
-            "`write_rows` / `write_cells` to fill it."
+            "sheet 'Sheet'. Fill it with `run_script`, using the named "
+            "styles below."
         ),
         sheet_count=count_sheets(workbook),
+        sheets=list_sheet_infos(workbook),
+        styles=list(workbook.named_styles),
     )
 
 
@@ -146,7 +142,8 @@ async def create_project(
         "Open a `.xlsx` the user attached in OpenWebUI, by its `file_id`. Use "
         "only when the user actually attached a file; if none was given, use "
         "`create_project` instead. Overwrites any existing project for the "
-        "user. Then call `list_sheets` to inspect or extend it."
+        "user. The result lists the file's sheets and named styles for "
+        "`run_script`."
     ),
 )
 async def open_project(
@@ -158,7 +155,7 @@ async def open_project(
     ),
     token: AccessToken = CurrentAccessToken(),
     user_id: str = TokenClaim("id"),
-) -> ProjectResult:
+) -> StartResult:
 
     file_content = await download_file(
         file_id=file_id,
@@ -174,249 +171,41 @@ async def open_project(
 
     _store.set(user_id, Project(workbook=workbook))
 
-    return ProjectResult(
+    return StartResult(
         hint=(
             f"Project opened from attached file '{file_id}'. "
-            "Call `list_sheets` to see its sheets, then `read_sheet` or the "
-            "write tools to work with them."
+            "Inspect and edit it with `run_script` (`read_sheet(...)` shows "
+            "a sheet's content), using the sheets and named styles below."
         ),
         sheet_count=count_sheets(workbook),
+        sheets=list_sheet_infos(workbook),
+        styles=list(workbook.named_styles),
     )
 
 
 @mcp.tool(
-    name="list_sheets",
-    description=(
-        "List the worksheets of the current project with their used extent "
-        "(`rows` x `cols`). Use the titles to target the other tools."
-    ),
+    name="run_script",
+    description=SCRIPT_API,
 )
-async def list_sheets(
-    project: Project = Depends(_get_project),
-) -> SheetsResult:
-
-    async with project.lock:
-        sheets = list_sheet_infos(project.workbook)
-
-    return SheetsResult(
-        hint=(
-            "Use the sheet titles with `read_sheet`, `write_rows`, and "
-            "`write_cells`."
-        ),
-        sheets=sheets,
-    )
-
-
-@mcp.tool(
-    name="list_styles",
-    description=(
-        "List the names of the named cell styles in the current project. Pass "
-        "one to `write_cells` or `write_rows` to format cells. Optional — "
-        "cells without a style use the default formatting."
-    ),
-)
-async def list_styles(
-    project: Project = Depends(_get_project),
-) -> StylesResult:
-
-    async with project.lock:
-        styles = list(project.workbook.named_styles)
-
-    hint = (
-        "Pass a style name to `write_rows` or `write_cells`; omit it for "
-        "default formatting."
-    ) if styles else (
-        "No named styles in this workbook; write without `style`."
-    )
-
-    return StylesResult(hint=hint, styles=styles)
-
-
-@mcp.tool(
-    name="insert_sheet",
-    description=(
-        "Insert an empty worksheet. Without `index` it is appended; otherwise "
-        "it is inserted at that zero-based position. After the requested "
-        "batch of edits, call `finalize_project` once (not after each change)."
-    ),
-)
-async def insert_sheet(
-    title: str = Field(description="Title for the new worksheet."),
-    index: int | None = Field(
-        default=None,
-        description=(
-            "Zero-based position to insert at. If omitted, the sheet is "
-            "appended at the end."
-        ),
-    ),
+async def run_script(
+    code: str = Field(description="Python script for the sandbox."),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
-) -> ProjectResult:
+) -> ScriptResult:
 
     async with project.lock:
 
-        _insert_sheet(project.workbook, title, index)
-
-        _store.touch(user_id, project)
-
-        return ProjectResult(
-            hint=_EDIT_HINT,
-            sheet_count=count_sheets(project.workbook),
+        output = await run_sandboxed(
+            code,
+            functions=script_functions(project.workbook),
         )
 
-
-@mcp.tool(
-    name="write_rows",
-    description=(
-        "Fill a contiguous block of cells from `rows` (row-major), starting "
-        "at `anchor` (top-left, default `A1`). Best for tables and bulk data; "
-        "for scattered or individually-styled cells use `write_cells`. An "
-        "optional `style` from `list_styles` formats every written cell. "
-        "Changes stay in memory only. After the requested batch of edits, "
-        "call `finalize_project` once (not after each change)."
-    ),
-)
-async def write_rows(
-    sheet: str = Field(description="Worksheet title from `list_sheets`."),
-    rows: list[list[bool | int | float | str | None]] = Field(
-        description=(
-            "Row-major values. Numbers stay numeric, a string starting with "
-            "`=` becomes a formula, and `null` clears the cell."
-        ),
-    ),
-    anchor: str = Field(
-        default="A1",
-        description="A1 reference of the top-left cell.",
-    ),
-    style: str | None = Field(
-        default=None,
-        description="Named cell style from `list_styles` for every cell.",
-    ),
-    user_id: str = TokenClaim("id"),
-    project: Project = Depends(_get_project),
-) -> WriteResult:
-
-    async with project.lock:
-
-        _write_rows(project.workbook, sheet, anchor, rows, style)
-
         _store.touch(user_id, project)
 
-    return WriteResult(
-        hint=_EDIT_HINT,
-        cells=sum(len(row) for row in rows),
-    )
-
-
-@mcp.tool(
-    name="write_cells",
-    description=(
-        "Write values into individual cells by A1 reference, optionally "
-        "formatting each with a named style from `list_styles`. Best for "
-        "scattered edits or styling specific cells; to fill a contiguous "
-        "table use `write_rows`. At most a limited number of cells per call. "
-        "Only the listed cells change; the rest stay as-is. Changes stay in "
-        "memory only. "
-        "After the requested batch of edits, call `finalize_project` once "
-        "(not after each change)."
-    ),
-)
-async def write_cells(
-    sheet: str = Field(description="Worksheet title from `list_sheets`."),
-    cells: list[CellInput] = Field(
-        max_length=100,
-        description="Cells to write, each targeting one A1 reference.",
-    ),
-    user_id: str = TokenClaim("id"),
-    project: Project = Depends(_get_project),
-) -> WriteResult:
-
-    async with project.lock:
-
-        _write_cells(project.workbook, sheet, cells)
-
-        _store.touch(user_id, project)
-
-    return WriteResult(hint=_EDIT_HINT, cells=len(cells))
-
-
-@mcp.tool(
-    name="read_sheet",
-    description=(
-        "Read a worksheet's used range as rows of plain text (row-major, empty "
-        "cells as ``). Formulas are returned as their formula string, not the "
-        "computed result."
-    ),
-)
-async def read_sheet(
-    sheet: str = Field(description="Worksheet title from `list_sheets`."),
-    project: Project = Depends(_get_project),
-) -> ReadResult:
-
-    async with project.lock:
-        rows = read_sheet_rows(project.workbook, sheet)
-
-    hint = (
-        "Row and column positions are zero-based offsets from `A1`; use A1 "
-        "references with the write tools."
-    ) if rows else (
-        "Sheet is empty. Fill it with `write_rows`."
-    )
-
-    return ReadResult(hint=hint, rows=rows)
-
-
-@mcp.tool(
-    name="move_sheet",
-    description=(
-        "Move a worksheet to a new position by zero-based index. Negative "
-        "`to_index` counts from the end. Changes stay in memory only. After "
-        "the requested batch of edits, call `finalize_project` once (not "
-        "after each change)."
-    ),
-)
-async def move_sheet(
-    title: str = Field(description="Worksheet title from `list_sheets`."),
-    to_index: int = Field(description="Zero-based target position."),
-    user_id: str = TokenClaim("id"),
-    project: Project = Depends(_get_project),
-) -> SheetsResult:
-
-    async with project.lock:
-
-        _move_sheet(project.workbook, title, to_index)
-
-        _store.touch(user_id, project)
-
-        return SheetsResult(
-            hint=_EDIT_HINT,
-            sheets=list_sheet_infos(project.workbook),
-        )
-
-
-@mcp.tool(
-    name="remove_sheets",
-    description=(
-        "Remove worksheets by title (from `list_sheets`). A workbook must keep "
-        "at least one sheet. Changes stay in memory only. After the requested "
-        "batch of edits, call `finalize_project` once (not after each change)."
-    ),
-)
-async def remove_sheets(
-    titles: list[str] = Field(description="Worksheet titles to remove."),
-    user_id: str = TokenClaim("id"),
-    project: Project = Depends(_get_project),
-) -> ProjectResult:
-
-    async with project.lock:
-
-        drop_sheets(project.workbook, titles)
-
-        _store.touch(user_id, project)
-
-        return ProjectResult(
+        return ScriptResult(
             hint=_EDIT_HINT,
             sheet_count=count_sheets(project.workbook),
+            output=output,
         )
 
 
@@ -443,7 +232,7 @@ async def finalize_project(
 
     async with project.lock:
 
-        out_name = f"{file_name}.xlsx"
+        upload_name = f"{file_name}.xlsx"
 
         await to_thread(autofit_columns, project.workbook)
 
@@ -454,16 +243,16 @@ async def finalize_project(
 
         sheet_count = count_sheets(project.workbook)
 
-    uploaded = await upload_file(
-        file_name=out_name,
+    owui_url = await upload_file(
+        file_name=upload_name,
         data=buffer.getvalue(),
-        content_type=XLSX_MIME,
+        content_type=_XLSX_MIME,
         token=token.token,
     )
 
     return FinalizeResult(
         hint=_FINALIZE_HINT,
-        file_name=out_name,
+        file_name=upload_name,
         sheet_count=sheet_count,
-        owui_url=uploaded.download_url,
+        owui_url=owui_url,
     )

@@ -1,7 +1,9 @@
+from io import BytesIO
 from pathlib import Path
 
 from fastmcp.utilities.logging import get_logger
 from openpyxl import load_workbook
+from openpyxl.drawing.image import Image
 from openpyxl.utils.cell import (
     coordinate_from_string,
     coordinate_to_tuple,
@@ -11,12 +13,16 @@ from openpyxl.utils.exceptions import CellCoordinatesException
 from openpyxl.workbook import Workbook as WorkbookType
 from openpyxl.worksheet.worksheet import Worksheet
 
-from models.xlsx import CellInput, SheetInfo
+from models.xlsx import SheetInfo
 
 logger = get_logger(__name__)
 
 
 _MAX_COLUMN_WIDTH = 60.0
+
+# Display size of inserted pictures in pixels (16:9).
+_PICTURE_WIDTH = 640
+_PICTURE_HEIGHT = 360
 
 
 def list_template_names(
@@ -37,19 +43,6 @@ def list_template_names(
             template_names.append(file_path.name)
 
     return template_names
-
-
-def clear_workbook(
-    workbook: WorkbookType,
-) -> None:
-
-    keep = workbook.create_sheet()
-
-    for worksheet in list(workbook.worksheets):
-        if worksheet is not keep:
-            workbook.remove(worksheet)
-
-    keep.title = "Sheet"
 
 
 def count_sheets(
@@ -115,53 +108,36 @@ def read_sheet_rows(
     return rows
 
 
-def insert_sheet(
-    workbook: WorkbookType,
-    title: str,
-    index: int | None,
-) -> None:
-
-    if title in workbook.sheetnames:
-        raise ValueError(f"Sheet '{title}' already exists.")
-
-    workbook.create_sheet(title=title, index=index)
-
-
-def write_cells(
+def write_cell(
     workbook: WorkbookType,
     sheet_title: str,
-    cells: list[CellInput],
+    ref: str,
+    value: bool | int | float | str | None,
+    style: str | None,
 ) -> None:
 
     worksheet = _get_sheet(workbook, sheet_title)
-    style_names = set(workbook.named_styles)
 
-    for cell in cells:
+    try:
+        coordinate_from_string(ref)
+    except CellCoordinatesException:
+        raise ValueError(f"Invalid cell reference '{ref}'.") from None
 
-        try:
-            coordinate_from_string(cell.ref)
-        except CellCoordinatesException:
-            raise ValueError(
-                f"Invalid cell reference '{cell.ref}'."
-            ) from None
+    if style is not None and style not in workbook.named_styles:
+        raise ValueError(f"Style '{style}' not found.")
 
-        if cell.style is not None and cell.style not in style_names:
-            raise ValueError(f"Style '{cell.style}' not found.")
+    cell = worksheet[ref]
+    cell.value = value
 
-    for cell in cells:
-
-        target = worksheet[cell.ref]
-        target.value = cell.value
-
-        if cell.style is not None:
-            target.style = cell.style
+    if style is not None:
+        cell.style = style
 
 
 def write_rows(
     workbook: WorkbookType,
     sheet_title: str,
-    anchor: str,
     rows: list[list[bool | int | float | str | None]],
+    anchor: str,
     style: str | None,
 ) -> None:
 
@@ -188,6 +164,52 @@ def write_rows(
                 cell.style = style
 
 
+def insert_picture(
+    workbook: WorkbookType,
+    sheet_title: str,
+    image: BytesIO,
+    anchor: str,
+) -> None:
+
+    worksheet = _get_sheet(workbook, sheet_title)
+
+    try:
+        coordinate_from_string(anchor)
+    except CellCoordinatesException:
+        raise ValueError(f"Invalid anchor reference '{anchor}'.") from None
+
+    picture = Image(image)
+    picture.width = _PICTURE_WIDTH
+    picture.height = _PICTURE_HEIGHT
+
+    worksheet.add_image(picture, anchor)
+
+
+def clear_workbook(
+    workbook: WorkbookType,
+) -> None:
+
+    keep = workbook.create_sheet()
+
+    for worksheet in list(workbook.worksheets):
+        if worksheet is not keep:
+            workbook.remove(worksheet)
+
+    keep.title = "Sheet"
+
+
+def insert_sheet(
+    workbook: WorkbookType,
+    title: str,
+    index: int | None,
+) -> None:
+
+    if title in workbook.sheetnames:
+        raise ValueError(f"Sheet '{title}' already exists.")
+
+    workbook.create_sheet(title=title, index=index)
+
+
 def drop_sheets(
     workbook: WorkbookType,
     titles: list[str],
@@ -202,27 +224,6 @@ def drop_sheets(
 
     for worksheet in targets:
         workbook.remove(worksheet)
-
-
-def autofit_columns(
-    workbook: WorkbookType,
-) -> None:
-
-    for worksheet in workbook.worksheets:
-        for index, column in enumerate(worksheet.iter_cols(), start=1):
-
-            lengths = [
-                len(line)
-                for cell in column
-                if cell.value is not None
-                for line in str(cell.value).splitlines()
-            ]
-
-            if lengths:
-                letter = get_column_letter(index)
-                worksheet.column_dimensions[letter].width = min(
-                    max(lengths) + 2.0, _MAX_COLUMN_WIDTH,
-                )
 
 
 def move_sheet(
@@ -244,3 +245,24 @@ def move_sheet(
         raise ValueError(f"Target index {to_index} out of range.")
 
     workbook.move_sheet(title, offset=to_index % count - current)
+
+
+def autofit_columns(
+    workbook: WorkbookType,
+) -> None:
+
+    for worksheet in workbook.worksheets:
+        for index, column in enumerate(worksheet.iter_cols(), start=1):
+
+            lengths = [
+                len(line)
+                for cell in column
+                if cell.value is not None
+                for line in str(cell.value).splitlines()
+            ]
+
+            if lengths:
+                letter = get_column_letter(index)
+                worksheet.column_dimensions[letter].width = min(
+                    max(lengths) + 2.0, _MAX_COLUMN_WIDTH,
+                )

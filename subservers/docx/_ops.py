@@ -1,8 +1,10 @@
+from io import BytesIO
 from pathlib import Path
 
 from docx import Document
 from docx.document import Document as DocumentType
 from docx.enum.style import WD_STYLE_TYPE
+from docx.shared import Cm, Emu
 from docx.table import Table
 from docx.text.paragraph import Paragraph
 from fastmcp.utilities.logging import get_logger
@@ -67,17 +69,13 @@ def _block_elements(
     return children
 
 
-def count_blocks(
-    document: DocumentType,
-) -> int:
-    return len(_block_elements(document))
-
-
-def content_blocks(
+def _block_proxies(
     document: DocumentType,
 ) -> list:
 
-    body = document.element.body
+    # The _Body proxy (not the raw oxml body) so block proxies can reach
+    # `.part`, which e.g. the style setter needs.
+    body = document._body
 
     blocks: list = []
 
@@ -93,16 +91,27 @@ def content_blocks(
     return blocks
 
 
+def count_blocks(
+    document: DocumentType,
+) -> int:
+    return len(_block_elements(document))
+
+
 def list_block_infos(
     document: DocumentType,
 ) -> list[BlockInfo]:
 
     block_infos: list[BlockInfo] = []
 
-    for block in content_blocks(document):
+    for block in _block_proxies(document):
 
         if isinstance(block, Paragraph):
-            block_infos.append(BlockInfo(type="paragraph", text=block.text))
+            text = block.text
+
+            if not text and block._p.xpath(".//w:drawing"):
+                text = "[image]"
+
+            block_infos.append(BlockInfo(type="paragraph", text=text))
         elif isinstance(block, Table):
             block_infos.append(BlockInfo(
                 type="table",
@@ -112,6 +121,69 @@ def list_block_infos(
             block_infos.append(BlockInfo(type=block.tag, text=""))
 
     return block_infos
+
+
+def get_paragraph(
+    document: DocumentType,
+    block_index: int,
+) -> Paragraph:
+
+    blocks = _block_proxies(document)
+
+    try:
+        block = blocks[block_index]
+    except IndexError:
+        raise ValueError(
+            f"Block index {block_index} out of range."
+        ) from None
+
+    if not isinstance(block, Paragraph):
+        raise ValueError(f"Block {block_index} is not a paragraph.")
+
+    return block
+
+
+def _usable_width(
+    document: DocumentType,
+) -> Emu | None:
+
+    section = document.sections[-1]
+
+    if section.page_width is None:
+        return None
+
+    return Emu(
+        section.page_width
+        - (section.left_margin or 0)
+        - (section.right_margin or 0)
+    )
+
+
+def insert_picture(
+    document: DocumentType,
+    image: BytesIO,
+    width_cm: float | None,
+) -> None:
+
+    if width_cm is not None:
+        document.add_picture(image, width=Cm(width_cm))
+        return
+
+    picture = document.add_picture(image)
+    usable_width = _usable_width(document)
+
+    if usable_width is not None and picture.width > usable_width:
+        picture.height = Emu(
+            round(picture.height * usable_width / picture.width)
+        )
+        picture.width = usable_width
+
+
+def clear_document(
+    document: DocumentType,
+) -> None:
+    for block in _block_elements(document):
+        document.element.body.remove(block)
 
 
 def drop_blocks(
@@ -134,13 +206,6 @@ def drop_blocks(
 
     for block in targets:
         body.remove(block)
-
-
-def drop_all_blocks(
-    document: DocumentType,
-) -> None:
-    for block in _block_elements(document):
-        document.element.body.remove(block)
 
 
 def move_block(

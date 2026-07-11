@@ -39,7 +39,7 @@ class ProjectStore[ProjectT]:
         if self._projects.get(user_id) is project:
             self._projects[user_id] = project
 
-    async def _sweep_task(self) -> None:
+    async def _sweep_loop(self) -> None:
         while True:
             await sleep(self._sweep_interval)
             self._projects.expire()
@@ -50,7 +50,7 @@ class ProjectStore[ProjectT]:
         server: FastMCP,
     ) -> AsyncIterator[None]:
 
-        task = create_task(self._sweep_task())
+        task = create_task(self._sweep_loop())
 
         try:
             yield

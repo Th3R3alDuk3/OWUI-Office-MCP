@@ -38,7 +38,7 @@ docker build -t owui-office-mcp .
 docker run -d -p 8000:8000 \
 --restart unless-stopped \
 --env-file .env \
---name owui-office-mcp
+--name owui-office-mcp \
 owui-office-mcp
 ```
 
@@ -54,60 +54,44 @@ Each subserver is mounted under its file extension as a namespace (`pptx_*`,
 `docx_*`, `xlsx_*`). Per user and toolset there is one in-memory project
 (keyed on the JWT's `id` claim, sliding TTL, auto-sweep — no disk writes).
 
-All three toolsets share the same project lifecycle:
+All three toolsets expose the same five tools:
 
 | Tool | |
 |---|---|
 | `list_templates` | available templates for the toolset |
 | `create_project` | new, empty project from a template |
 | `open_project` | open a file attached in OpenWebUI by `file_id` |
+| `run_script` | build/edit the project with one sandboxed Python script |
 | `finalize_project` | serialize the project and upload it to OpenWebUI |
 
-Discovery (`list_masters`, `list_styles`, `list_sheets`, …) runs against the
-current project, so both starting points behave the same. All `insert_*` and
-`move_*` tools use zero-based indices; inserts append when no index is given.
+Building and editing happens in `run_script`: the model writes plain Python
+(loops, f-strings, data transforms) against a small facade of functions
+documented in the tool description — one call per edit batch instead of
+many round trips. Scripts run in
+[Monty](https://github.com/pydantic/monty), a sandboxed interpreter with
+time/memory limits: no imports, no file or network access, and the facade
+only accepts the template's layouts and styles, so template governance
+stays technically enforced. `create_project` / `open_project` return the
+available layouts/styles directly, so no discovery round trips are needed.
 Every tool result carries a `hint` with the suggested next step, guiding
 agents through the flow.
 
-### `pptx`
+The script functions per toolset (zero-based indices everywhere):
 
-| Tool | |
+| Toolset | Functions |
 |---|---|
-| `list_masters` | slide masters of the current project |
-| `list_layouts` | layouts + placeholders of a master |
-| `insert_slide` | insert a slide from a layout, optionally filling placeholders |
-| `list_slides` | slides in order (layout, text) |
-| `edit_slide` | update placeholders of a slide |
-| `move_slide` | move a slide by index |
-| `remove_slides` | remove slides by index |
+| `pptx` | `add_slide`, `fill` (tab-nested bullets), `set_notes`, `add_image` (attached OpenWebUI image), `add_chart`, `list_slides`, `move_slide`, `remove_slides` |
+| `docx` | `add_paragraph`, `add_table`, `add_page_break`, `add_image`, `add_chart`, `edit_paragraph`, `list_blocks`, `move_block`, `remove_blocks` |
+| `xlsx` | `write_rows`, `write_cell` (values, formulas, named styles), `add_chart`, `read_sheet`, `add_sheet`, `move_sheet`, `remove_sheets`, `list_sheets` |
 
-### `docx`
-
-| Tool | |
-|---|---|
-| `list_styles` | paragraph and table styles |
-| `insert_paragraph` | insert a styled paragraph |
-| `insert_table` | insert a table, optionally with cell data |
-| `insert_page_break` | insert a page break |
-| `list_blocks` | body blocks in order (type, text preview) |
-| `move_block` | move a body block by index |
-| `remove_blocks` | remove body blocks by index |
-
-### `xlsx`
-
-| Tool | |
-|---|---|
-| `list_sheets` | worksheets (title, used extent) |
-| `list_styles` | named cell styles |
-| `insert_sheet` | add a worksheet |
-| `write_rows` | fill a contiguous block from a 2D array at an anchor |
-| `write_cells` | write individual cells by A1 reference |
-| `read_sheet` | read a sheet's used range as text rows |
-| `move_sheet` | move a worksheet by index |
-| `remove_sheets` | remove worksheets by title |
+`add_chart` renders a bar, line, or pie chart server-side (matplotlib) and
+inserts it as a PNG image. `xlsx_finalize_project` auto-fits every column's
+width to its content before uploading, so sheets open without cut-off text.
 
 ## 🔒 Limits
 
+- `run_script` code runs in the Monty sandbox: no imports, no file or
+  network access, capped execution time and memory.
 - Projects live in memory only: a restart drops open projects, and idle
   projects expire after `PROJECT_TTL` seconds.
 - Requests are rate-limited per user (token bucket: `RATE_LIMIT_RPS`

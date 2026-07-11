@@ -27,7 +27,10 @@ class BlockInfo(BaseModel):
         description="Block type: `paragraph` or `table`.",
     )
     text: str = Field(
-        description="Paragraph text, or a size preview for tables.",
+        description=(
+            "Paragraph text (`[image]` for image paragraphs), or a size "
+            "preview for tables."
+        ),
     )
 
 
@@ -37,20 +40,18 @@ class ProjectResult(ToolResult):
     )
 
 
-class StylesResult(ToolResult):
+class StartResult(ProjectResult):
     styles: dict[str, StyleInfo] = Field(
         description=(
-            "Style name -> type and builtin flag, for `insert_paragraph` / "
-            "`insert_table`."
+            "Style name -> type and builtin flag, across the whole template. "
+            "Everything `run_script` may use."
         ),
     )
 
 
-class BlocksResult(ToolResult):
-    blocks: list[BlockInfo] = Field(
-        description=(
-            "Body blocks in order; the list position is the zero-based block index."
-        ),
+class ScriptResult(ProjectResult):
+    output: str = Field(
+        description="Printed output and last expression of the script.",
     )
 
 
