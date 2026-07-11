@@ -41,6 +41,7 @@ Mounted tool names are prefixed, for example `pptx_finalize_project` and
 server.
 """.strip()
 
+
 auth = JWTVerifier(
     public_key=settings.jwt_secret,
     algorithm=settings.jwt_algorithm,

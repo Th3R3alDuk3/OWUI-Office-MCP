@@ -25,6 +25,7 @@ from models.xlsx import (
 from services.owui import download_file, upload_file
 from subservers._store import ProjectStore
 from subservers.xlsx._utils import (
+    autofit_columns,
     clear_workbook,
     count_sheets,
     drop_sheets,
@@ -159,7 +160,7 @@ async def open_project(
     user_id: str = TokenClaim("id"),
 ) -> ProjectResult:
 
-    file_name, file_content = await download_file(
+    file_content = await download_file(
         file_id=file_id,
         token=token.token,
     )
@@ -175,7 +176,7 @@ async def open_project(
 
     return ProjectResult(
         hint=(
-            f"Project opened from attached file '{file_name}'. "
+            f"Project opened from attached file '{file_id}'. "
             "Call `list_sheets` to see its sheets, then `read_sheet` or the "
             "write tools to work with them."
         ),
@@ -422,11 +423,12 @@ async def remove_sheets(
 @mcp.tool(
     name="finalize_project",
     description=(
-        "Final step of an edit batch: serialize the current project to "
-        "`.xlsx` and upload it to OpenWebUI. Call exactly once after the "
-        "requested batch of changes, not after each one. The project stays "
-        "active afterwards, so a later edit batch ends with another single "
-        "`finalize_project` call."
+        "Final step of an edit batch: auto-fit the column widths to their "
+        "content, then serialize the current project to `.xlsx` and upload "
+        "it to OpenWebUI. Call exactly once after the requested batch of "
+        "changes, not after each one. The project stays active afterwards, "
+        "so a later edit batch ends with another single `finalize_project` "
+        "call."
     ),
 )
 async def finalize_project(
@@ -442,6 +444,8 @@ async def finalize_project(
     async with project.lock:
 
         out_name = f"{file_name}.xlsx"
+
+        await to_thread(autofit_columns, project.workbook)
 
         buffer = BytesIO()
         await to_thread(project.workbook.save, buffer)

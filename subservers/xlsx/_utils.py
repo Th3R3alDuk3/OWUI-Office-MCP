@@ -2,7 +2,11 @@ from pathlib import Path
 
 from fastmcp.utilities.logging import get_logger
 from openpyxl import load_workbook
-from openpyxl.utils.cell import coordinate_from_string, coordinate_to_tuple
+from openpyxl.utils.cell import (
+    coordinate_from_string,
+    coordinate_to_tuple,
+    get_column_letter,
+)
 from openpyxl.utils.exceptions import CellCoordinatesException
 from openpyxl.workbook import Workbook as WorkbookType
 from openpyxl.worksheet.worksheet import Worksheet
@@ -10,6 +14,9 @@ from openpyxl.worksheet.worksheet import Worksheet
 from models.xlsx import CellInput, SheetInfo
 
 logger = get_logger(__name__)
+
+
+_MAX_COLUMN_WIDTH = 60.0
 
 
 def list_template_names(
@@ -195,6 +202,27 @@ def drop_sheets(
 
     for worksheet in targets:
         workbook.remove(worksheet)
+
+
+def autofit_columns(
+    workbook: WorkbookType,
+) -> None:
+
+    for worksheet in workbook.worksheets:
+        for index, column in enumerate(worksheet.iter_cols(), start=1):
+
+            lengths = [
+                len(line)
+                for cell in column
+                if cell.value is not None
+                for line in str(cell.value).splitlines()
+            ]
+
+            if lengths:
+                letter = get_column_letter(index)
+                worksheet.column_dimensions[letter].width = min(
+                    max(lengths) + 2.0, _MAX_COLUMN_WIDTH,
+                )
 
 
 def move_sheet(

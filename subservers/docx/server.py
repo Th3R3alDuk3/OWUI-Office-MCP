@@ -154,7 +154,7 @@ async def open_project(
     user_id: str = TokenClaim("id"),
 ) -> ProjectResult:
 
-    file_name, file_content = await download_file(
+    file_content = await download_file(
         file_id=file_id,
         token=token.token,
     )
@@ -170,7 +170,7 @@ async def open_project(
 
     return ProjectResult(
         hint=(
-            f"Project opened from attached file '{file_name}'. "
+            f"Project opened from attached file '{file_id}'. "
             "Call `list_blocks` to see the existing content, or `list_styles` "
             "before adding blocks with `insert_paragraph` / `insert_table`."
         ),

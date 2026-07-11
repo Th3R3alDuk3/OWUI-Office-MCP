@@ -159,7 +159,7 @@ async def open_project(
     user_id: str = TokenClaim("id"),
 ) -> ProjectResult:
 
-    file_name, file_content = await download_file(
+    file_content = await download_file(
         file_id=file_id,
         token=token.token,
     )
@@ -175,7 +175,7 @@ async def open_project(
 
     return ProjectResult(
         hint=(
-            f"Project opened from attached file '{file_name}'. "
+            f"Project opened from attached file '{file_id}'. "
             "Call `list_slides` to edit existing slides, or `list_masters` "
             "and `list_layouts` to add new ones with `insert_slide`."
         ),
