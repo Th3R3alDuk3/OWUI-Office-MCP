@@ -4,7 +4,6 @@ from config import get_settings
 
 _settings = get_settings()
 
-
 _REQUEST_TIMEOUT_SECONDS = 30.0
 
 _FILE_UPLOAD_URL = "{base_url}/api/v1/files/"
