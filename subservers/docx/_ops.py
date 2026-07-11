@@ -16,6 +16,9 @@ logger = get_logger(__name__)
 
 _W_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
+_COMMENT_AUTHOR = "Assistant"
+_COMMENT_INITIALS = "AI"
+
 
 def list_template_names(
     templates_dir: Path,
@@ -143,22 +146,6 @@ def get_paragraph(
     return block
 
 
-def _usable_width(
-    document: DocumentType,
-) -> Emu | None:
-
-    section = document.sections[-1]
-
-    if section.page_width is None:
-        return None
-
-    return Emu(
-        section.page_width
-        - (section.left_margin or 0)
-        - (section.right_margin or 0)
-    )
-
-
 def insert_picture(
     document: DocumentType,
     image: BytesIO,
@@ -170,13 +157,50 @@ def insert_picture(
         return
 
     picture = document.add_picture(image)
-    usable_width = _usable_width(document)
+    section = document.sections[-1]
 
-    if usable_width is not None and picture.width > usable_width:
+    if section.page_width is None:
+        return
+
+    usable_width = Emu(
+        section.page_width
+        - (section.left_margin or 0)
+        - (section.right_margin or 0)
+    )
+
+    if picture.width > usable_width:
         picture.height = Emu(
             round(picture.height * usable_width / picture.width)
         )
         picture.width = usable_width
+
+
+def add_comment(
+    document: DocumentType,
+    block_index: int,
+    text: str,
+) -> None:
+
+    paragraph = get_paragraph(document, block_index)
+
+    # Text inside hyperlinks lives outside `paragraph.runs`.
+    runs = paragraph.runs or [
+        run
+        for hyperlink in paragraph.hyperlinks
+        for run in hyperlink.runs
+    ]
+
+    if not runs:
+        raise ValueError(
+            f"Block {block_index} is empty; a comment needs text to anchor on."
+        )
+
+    document.add_comment(
+        runs=runs,
+        text=text,
+        author=_COMMENT_AUTHOR,
+        initials=_COMMENT_INITIALS,
+    )
 
 
 def clear_document(

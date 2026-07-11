@@ -43,6 +43,10 @@ sandboxed: no imports, no file or network access. Available functions:
   takes exactly one series.
 - edit_paragraph(index: int, text: str, style: str | None = None) -> None
   Replace the text (and optionally style) of an existing paragraph.
+- add_comment(index: int, text: str) -> None
+  Attach a review comment (a real Word comment) to the paragraph at
+  block `index`. Its text stays untouched — use it to give feedback on
+  an opened document.
 - list_blocks() -> list[dict]
   Body blocks in order (type, text); the list position is the block index.
 - move_block(from_index: int, to_index: int) -> None
@@ -183,6 +187,9 @@ def script_functions(
         if style is not None:
             paragraph.style = style
 
+    def add_comment(index: int, text: str) -> None:
+        _ops.add_comment(document, index, text)
+
     def list_blocks() -> list[dict]:
         return [
             info.model_dump()
@@ -202,6 +209,7 @@ def script_functions(
         "add_image": add_image,
         "add_chart": add_chart,
         "edit_paragraph": edit_paragraph,
+        "add_comment": add_comment,
         "list_blocks": list_blocks,
         "move_block": move_block,
         "remove_blocks": remove_blocks,

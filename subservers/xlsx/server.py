@@ -189,6 +189,7 @@ async def open_project(
 )
 async def run_script(
     code: str = Field(description="Python script for the sandbox."),
+    token: AccessToken = CurrentAccessToken(),
     user_id: str = TokenClaim("id"),
     project: Project = Depends(_get_project),
 ) -> ScriptResult:
@@ -197,7 +198,7 @@ async def run_script(
 
         output = await run_sandboxed(
             code,
-            functions=script_functions(project.workbook),
+            functions=script_functions(project.workbook, token.token),
         )
 
         _store.touch(user_id, project)

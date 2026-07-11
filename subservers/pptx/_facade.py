@@ -7,7 +7,6 @@ from pptx.shapes.placeholder import PicturePlaceholder
 from pptx.slide import Slide
 
 from services.owui import download_file
-from subservers._chart import render_chart
 from subservers.pptx import _ops
 
 SCRIPT_API = """
@@ -30,9 +29,14 @@ sandboxed: no imports, no file or network access. Available functions:
 - add_chart(slide_index: int, kind: str, categories: list[str],
             series: dict[str, list[float]], title: str | None = None,
             placeholder_idx: int | None = None) -> None
-  Render a chart as an image and place it like `add_image`. `kind` is
-  "bar", "line" or "pie"; `series` maps each series name to one value per
-  category. A pie chart takes exactly one series.
+  Insert a native, editable chart. `kind` is "bar", "line" or "pie";
+  `series` maps each series name to one value per category. A pie chart
+  takes exactly one series. With `placeholder_idx` the chart fills that
+  placeholder's area, else it is centered on the slide.
+- add_comment(slide_index: int, text: str) -> None
+  Attach a review comment by appending it to the slide's speaker notes,
+  keeping the existing notes. The slide's content stays untouched — use
+  it to give feedback on an opened presentation.
 - list_slides() -> list[dict]
   Slides in order (layout, text); the list position is the slide index.
 - move_slide(from_index: int, to_index: int) -> None
@@ -76,26 +80,6 @@ def script_functions(
                 "slide's layout."
             ) from None
 
-    def _insert_picture(
-        slide: Slide,
-        image: BytesIO,
-        placeholder_idx: int | None,
-    ) -> None:
-
-        if placeholder_idx is None:
-            _ops.add_centered_picture(presentation, slide, image)
-            return
-
-        placeholder = _placeholder(slide, placeholder_idx)
-
-        if not isinstance(placeholder, PicturePlaceholder):
-            raise ValueError(
-                f"Placeholder idx {placeholder_idx} is not a "
-                "PICTURE placeholder."
-            )
-
-        placeholder.insert_picture(image)
-
     def add_slide(layout: str, index: int | None = None) -> int:
 
         for master in presentation.slide_masters:
@@ -133,10 +117,24 @@ def script_functions(
 
         slide = _slide(slide_index)
 
+        if placeholder_idx is not None:
+            placeholder = _placeholder(slide, placeholder_idx)
+
+            if not isinstance(placeholder, PicturePlaceholder):
+                raise ValueError(
+                    f"Placeholder idx {placeholder_idx} is not a "
+                    "PICTURE placeholder."
+                )
+
         file_content = await download_file(file_id=file_id, token=token)
 
         try:
-            _insert_picture(slide, BytesIO(file_content), placeholder_idx)
+            if placeholder_idx is None:
+                _ops.add_centered_picture(
+                    presentation, slide, BytesIO(file_content),
+                )
+            else:
+                placeholder.insert_picture(BytesIO(file_content))
         except OSError as error:
             raise ValueError(
                 f"File '{file_id}' is not a supported image."
@@ -153,9 +151,17 @@ def script_functions(
 
         slide = _slide(slide_index)
 
-        chart_png = render_chart(kind, categories, series, title)
+        placeholder = (
+            _placeholder(slide, placeholder_idx)
+            if placeholder_idx is not None else None
+        )
 
-        _insert_picture(slide, BytesIO(chart_png), placeholder_idx)
+        _ops.add_chart(
+            presentation, slide, kind, categories, series, title, placeholder,
+        )
+
+    def add_comment(slide_index: int, text: str) -> None:
+        _ops.add_comment(_slide(slide_index), text)
 
     def list_slides() -> list[dict]:
         return [
@@ -175,6 +181,7 @@ def script_functions(
         "set_notes": set_notes,
         "add_image": add_image,
         "add_chart": add_chart,
+        "add_comment": add_comment,
         "list_slides": list_slides,
         "move_slide": move_slide,
         "remove_slides": remove_slides,

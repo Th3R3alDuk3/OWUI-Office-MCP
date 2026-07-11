@@ -4,6 +4,8 @@ from pathlib import Path
 
 from fastmcp.utilities.logging import get_logger
 from pptx import Presentation
+from pptx.chart.data import CategoryChartData
+from pptx.enum.chart import XL_CHART_TYPE
 from pptx.oxml.presentation import CT_SlideId, CT_SlideIdList
 from pptx.presentation import Presentation as PresentationType
 from pptx.shapes.base import BaseShape
@@ -25,8 +27,14 @@ _BULLET_MARKER = re.compile(
 
 _MAX_BULLET_LEVEL = 8
 
-# Centered pictures fill at most this fraction of the slide.
+# Centered pictures and charts fill at most this fraction of the slide.
 _PICTURE_SLIDE_FRACTION = 0.8
+
+_CHART_TYPES = {
+    "bar": XL_CHART_TYPE.COLUMN_CLUSTERED,
+    "line": XL_CHART_TYPE.LINE,
+    "pie": XL_CHART_TYPE.PIE,
+}
 
 
 def list_template_names(
@@ -154,6 +162,75 @@ def add_centered_picture(
     picture.height = int(picture.height * scale)
     picture.left = (presentation.slide_width - picture.width) // 2
     picture.top = (presentation.slide_height - picture.height) // 2
+
+
+def add_chart(
+    presentation: PresentationType,
+    slide: Slide,
+    kind: str,
+    categories: list[str],
+    series: dict[str, list[float]],
+    title: str | None,
+    placeholder: BaseShape | None,
+) -> None:
+
+    if kind not in _CHART_TYPES:
+        raise ValueError(
+            f"Chart kind '{kind}' not supported. "
+            f"Use one of: {', '.join(_CHART_TYPES)}."
+        )
+
+    if not categories or not series:
+        raise ValueError("categories and series must not be empty.")
+
+    for name, values in series.items():
+        if len(values) != len(categories):
+            raise ValueError(
+                f"Series '{name}' has {len(values)} values, "
+                f"but there are {len(categories)} categories."
+            )
+
+    if kind == "pie" and len(series) > 1:
+        raise ValueError("A pie chart takes exactly one series.")
+
+    chart_data = CategoryChartData()
+    chart_data.categories = categories
+
+    for name, values in series.items():
+        chart_data.add_series(name, values)
+
+    if placeholder is not None:
+        left, top = placeholder.left, placeholder.top
+        width, height = placeholder.width, placeholder.height
+        # Drop the now-covered empty placeholder box.
+        placeholder._element.getparent().remove(placeholder._element)
+    else:
+        width = int(presentation.slide_width * _PICTURE_SLIDE_FRACTION)
+        height = int(presentation.slide_height * _PICTURE_SLIDE_FRACTION)
+        left = (presentation.slide_width - width) // 2
+        top = (presentation.slide_height - height) // 2
+
+    graphic_frame = slide.shapes.add_chart(
+        _CHART_TYPES[kind], left, top, width, height, chart_data,
+    )
+
+    if title is not None:
+        chart = graphic_frame.chart
+        chart.has_title = True
+        chart.chart_title.text_frame.text = title
+
+
+def add_comment(
+    slide: Slide,
+    text: str,
+) -> None:
+
+    frame = slide.notes_slide.notes_text_frame
+
+    if frame.text:
+        frame.add_paragraph().text = text
+    else:
+        frame.text = text
 
 
 def _detach_slide(
