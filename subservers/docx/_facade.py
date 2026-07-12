@@ -10,7 +10,6 @@ from docx.image.exceptions import (
 )
 
 from services.owui import download_file
-from subservers._chart import render_chart
 from subservers.docx import _ops
 
 _MAX_TABLE_ROWS = 50
@@ -167,9 +166,7 @@ def script_functions(
         if width_cm is not None and not 0 < width_cm <= 30:
             raise ValueError("width_cm must be between 0 and 30.")
 
-        chart_png = render_chart(kind, categories, series, title)
-
-        _ops.insert_picture(document, BytesIO(chart_png), width_cm)
+        _ops.add_chart(document, kind, categories, series, title, width_cm)
 
         return _place_last(index)
 

@@ -4,18 +4,17 @@ from zipfile import BadZipFile
 
 from fastmcp import FastMCP
 from fastmcp.dependencies import CurrentAccessToken, Depends, TokenClaim
-from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AccessToken
 from pptx import Presentation
 from pydantic import Field
 
 from config import get_settings
-from models._base import TemplatesResult
 from models.pptx import (
     FinalizeResult,
     Project,
     ScriptResult,
     StartResult,
+    TemplatesResult,
 )
 from services.owui import download_file, upload_file
 from subservers._sandbox import run_sandboxed
@@ -50,23 +49,6 @@ _store = ProjectStore[Project](
     ttl=_settings.project_ttl,
     sweep_interval=_settings.project_sweep_interval,
 )
-
-
-def _get_project(
-    user_id: str = TokenClaim("id"),
-) -> Project:
-
-    project = _store.get(user_id)
-
-    if project is None:
-        # ToolError passes dependency resolution unchanged; other exceptions
-        # get swallowed into a generic "failed to resolve" message.
-        raise ToolError(
-            "No project for this user. "
-            "Call `create_project` or `open_project` first."
-        )
-
-    return project
 
 
 mcp = FastMCP(name="pptx", lifespan=_store.lifespan)
@@ -185,7 +167,7 @@ async def run_script(
     code: str = Field(description="Python script for the sandbox."),
     token: AccessToken = CurrentAccessToken(),
     user_id: str = TokenClaim("id"),
-    project: Project = Depends(_get_project),
+    project: Project = Depends(_store.require),
 ) -> ScriptResult:
 
     async with project.lock:
@@ -221,7 +203,7 @@ async def finalize_project(
     ),
     token: AccessToken = CurrentAccessToken(),
     user_id: str = TokenClaim("id"),
-    project: Project = Depends(_get_project),
+    project: Project = Depends(_store.require),
 ) -> FinalizeResult:
 
     async with project.lock:

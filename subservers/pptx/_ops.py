@@ -239,6 +239,7 @@ def _detach_slide(
     slide_id: CT_SlideId,
 ) -> None:
 
+    # A slide is attached twice: package relationship + sldId entry.
     if rid := slide_id.get(_RID_ATTR):
         presentation.part.drop_rel(rid)
 

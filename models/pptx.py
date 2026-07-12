@@ -4,8 +4,6 @@ from dataclasses import dataclass, field
 from pptx.presentation import Presentation as PresentationType
 from pydantic import BaseModel, Field
 
-from models._base import ToolResult, UploadResult
-
 
 @dataclass
 class Project:
@@ -40,7 +38,23 @@ class SlideInfo(BaseModel):
     )
 
 
-class ProjectResult(ToolResult):
+class TemplatesResult(BaseModel):
+    hint: str = Field(
+        description=(
+            "Suggested next step — guidance for the agent, not part of the data."
+        ),
+    )
+    templates: list[str] = Field(
+        description="Template file names for `create_project`.",
+    )
+
+
+class ProjectResult(BaseModel):
+    hint: str = Field(
+        description=(
+            "Suggested next step — guidance for the agent, not part of the data."
+        ),
+    )
     slide_count: int = Field(
         description="Current number of slides in the project.",
     )
@@ -61,7 +75,10 @@ class ScriptResult(ProjectResult):
     )
 
 
-class FinalizeResult(UploadResult):
-    slide_count: int = Field(
-        description="Number of slides in the uploaded file.",
+class FinalizeResult(ProjectResult):
+    file_name: str = Field(
+        description="Name of the uploaded file.",
+    )
+    owui_url: str = Field(
+        description="OpenWebUI download URL of the uploaded file.",
     )

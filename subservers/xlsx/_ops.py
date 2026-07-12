@@ -338,6 +338,7 @@ def move_sheet(
     if not -count <= to_index < count:
         raise ValueError(f"Target index {to_index} out of range.")
 
+    # openpyxl moves by relative offset; `% count` maps negative targets.
     workbook.move_sheet(title, offset=to_index % count - current)
 
 

@@ -4,6 +4,8 @@ from contextlib import asynccontextmanager, suppress
 
 from cachetools import TTLCache
 from fastmcp import FastMCP
+from fastmcp.dependencies import TokenClaim
+from fastmcp.exceptions import ToolError
 
 
 class ProjectStore[ProjectT]:
@@ -24,11 +26,23 @@ class ProjectStore[ProjectT]:
     ) -> None:
         self._projects[user_id] = project
 
-    def get(
+    def require(
         self,
-        user_id: str,
-    ) -> ProjectT | None:
-        return self._projects.get(user_id)
+        user_id: str = TokenClaim("id"),
+    ) -> ProjectT:
+
+        project = self._projects.get(user_id)
+
+        if project is None:
+            # ToolError passes dependency resolution unchanged; other
+            # exceptions get swallowed into a generic "failed to resolve"
+            # message.
+            raise ToolError(
+                "No project for this user. "
+                "Call `create_project` or `open_project` first."
+            )
+
+        return project
 
     def touch(
         self,

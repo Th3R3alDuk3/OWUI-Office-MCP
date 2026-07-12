@@ -8,6 +8,7 @@ from docx.shared import Cm, Emu
 from docx.table import Table
 from docx.text.paragraph import Paragraph
 from fastmcp.utilities.logging import get_logger
+from matplotlib.figure import Figure
 
 from models.docx import BlockInfo, StyleInfo
 
@@ -18,6 +19,11 @@ _W_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
 _COMMENT_AUTHOR = "Assistant"
 _COMMENT_INITIALS = "AI"
+
+_CHART_KINDS = ("bar", "line", "pie")
+
+_FIGURE_SIZE = (8.0, 4.5)
+_FIGURE_DPI = 150
 
 
 def list_template_names(
@@ -173,6 +179,72 @@ def insert_picture(
             round(picture.height * usable_width / picture.width)
         )
         picture.width = usable_width
+
+
+def add_chart(
+    document: DocumentType,
+    kind: str,
+    categories: list[str],
+    series: dict[str, list[float]],
+    title: str | None,
+    width_cm: float | None,
+) -> None:
+
+    if kind not in _CHART_KINDS:
+        raise ValueError(
+            f"Chart kind '{kind}' not supported. "
+            f"Use one of: {', '.join(_CHART_KINDS)}."
+        )
+
+    if not categories or not series:
+        raise ValueError("categories and series must not be empty.")
+
+    for name, values in series.items():
+        if len(values) != len(categories):
+            raise ValueError(
+                f"Series '{name}' has {len(values)} values, "
+                f"but there are {len(categories)} categories."
+            )
+
+    if kind == "pie" and len(series) > 1:
+        raise ValueError("A pie chart takes exactly one series.")
+
+    figure = Figure(figsize=_FIGURE_SIZE, dpi=_FIGURE_DPI, layout="constrained")
+    axes = figure.add_subplot()
+
+    if kind == "bar":
+        # Center each category's bar group (total width 0.8) on its tick.
+        bar_width = 0.8 / len(series)
+
+        for offset, (name, values) in enumerate(series.items()):
+            positions = [
+                i - 0.4 + bar_width * (offset + 0.5)
+                for i in range(len(categories))
+            ]
+            axes.bar(positions, values, width=bar_width, label=name)
+
+        axes.set_xticks(range(len(categories)), categories)
+
+    elif kind == "line":
+        for name, values in series.items():
+            axes.plot(categories, values, marker="o", label=name)
+
+    else:
+        (values,) = series.values()
+        axes.pie(values, labels=categories, autopct="%1.1f%%")
+
+    if kind != "pie":
+        axes.grid(axis="y", alpha=0.3)
+        axes.legend()
+
+    if title is not None:
+        axes.set_title(title)
+
+    buffer = BytesIO()
+    figure.savefig(buffer, format="png")
+    buffer.seek(0)
+
+    insert_picture(document, buffer, width_cm)
 
 
 def add_comment(
