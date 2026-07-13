@@ -1,9 +1,9 @@
 # OWUI-Office-MCP
 
-[![Docker](https://github.com/Th3R3alDuk3/OWUI-PPTX-MCP/actions/workflows/docker.yml/badge.svg)](https://github.com/Th3R3alDuk3/OWUI-PPTX-MCP/actions/workflows/docker.yml)
-[![Version](https://img.shields.io/github/v/tag/Th3R3alDuk3/OWUI-PPTX-MCP?label=version)](https://github.com/Th3R3alDuk3/OWUI-PPTX-MCP/tags)
+[![Docker](https://github.com/Th3R3alDuk3/OWUI-Office-MCP/actions/workflows/docker.yml/badge.svg)](https://github.com/Th3R3alDuk3/OWUI-Office-MCP/actions/workflows/docker.yml)
+[![Version](https://img.shields.io/github/v/tag/Th3R3alDuk3/OWUI-Office-MCP?label=version)](https://github.com/Th3R3alDuk3/OWUI-Office-MCP/tags)
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue)](pyproject.toml)
-[![License](https://img.shields.io/github/license/Th3R3alDuk3/OWUI-PPTX-MCP)](LICENSE)
+[![License](https://img.shields.io/github/license/Th3R3alDuk3/OWUI-Office-MCP)](LICENSE)
 
 > Office documents via MCP for OpenWebUI. Lean, modern, extensible.
 
@@ -48,6 +48,7 @@ and sends it to `run_script`.
 ```python
 revenue = {"Q1": 215, "Q2": 250, "Q3": 280}
 
+set_master("Office Theme")
 i = add_slide("Title and Content")
 fill(i, 0, "Revenue 2026")
 fill(i, 1, "\n".join(f"{q}: {v} kEUR" for q, v in revenue.items()))
@@ -100,7 +101,7 @@ docker run -d -p 8000:8000 \
 --restart unless-stopped \
 --env-file .env \
 --name owui-office-mcp \
-ghcr.io/th3r3alduk3/owui-pptx-mcp:latest
+ghcr.io/th3r3alduk3/owui-office-mcp:latest
 ```
 
 Or build the image locally: `docker build -t owui-office-mcp .`
@@ -130,7 +131,7 @@ The script functions per toolset (zero-based indices everywhere):
 
 | Toolset | Functions |
 |---|---|
-| `pptx` | `add_slide`, `fill` (tab-nested bullets), `set_notes`, `add_image` (attached OpenWebUI image), `add_chart`, `add_comment`, `list_slides`, `move_slide`, `remove_slides` |
+| `pptx` | `set_master` (slide master whose layouts `add_slide` uses), `add_slide`, `fill` (tab-nested bullets), `set_notes`, `add_image` (attached OpenWebUI image), `add_chart`, `add_comment`, `list_slides`, `move_slide`, `remove_slides` |
 | `docx` | `add_paragraph`, `add_table`, `add_page_break`, `add_image`, `add_chart`, `edit_paragraph`, `add_comment`, `list_blocks`, `move_block`, `remove_blocks` |
 | `xlsx` | `write_rows`, `write_cell` (values, formulas, named styles), `add_image`, `add_chart`, `add_comment`, `read_sheet`, `list_sheets`, `add_sheet`, `move_sheet`, `remove_sheets` |
 

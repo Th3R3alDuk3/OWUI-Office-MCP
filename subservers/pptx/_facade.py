@@ -1,11 +1,11 @@
 from collections.abc import Callable
 from io import BytesIO
 
-from pptx.presentation import Presentation as PresentationType
 from pptx.shapes.base import BaseShape
 from pptx.shapes.placeholder import PicturePlaceholder
 from pptx.slide import Slide
 
+from models.pptx import Project
 from services.owui import download_file
 from subservers.pptx import _ops
 
@@ -13,9 +13,15 @@ SCRIPT_API = """
 Run a Python script that builds or edits the current project. The script is
 sandboxed: no imports, no file or network access. Available functions:
 
+- set_master(master: str) -> None
+  Select the slide master to build with, by name (see `masters` in the
+  `create_project` / `open_project` result); required before `add_slide`.
+  Pick the one the user asked for, or the best fit if they did not name
+  one; in an opened file, prefer the master its slides already use.
 - add_slide(layout: str, index: int | None = None) -> int
-  Add a slide by layout name (see `layouts` in the `create_project` /
-  `open_project` result); returns its zero-based slide index.
+  Add a slide by layout name from the selected master (see `masters` in
+  the `create_project` / `open_project` result); returns its zero-based
+  slide index.
 - fill(slide_index: int, placeholder_idx: int, text: str) -> None
   Set placeholder text. Each line becomes a paragraph; prefix lines with
   tabs to nest them as sub-bullets (one tab per level).
@@ -48,6 +54,7 @@ as `output`. If the script fails, fix it and call `run_script` again.
 
 Example:
 
+    set_master("Office Theme")
     for title, body in [("Q1", "- Umsatz\\n- Kosten"), ("Q2", "- Ausblick")]:
         i = add_slide("Title and Content")
         fill(i, 0, title)
@@ -59,9 +66,11 @@ each change).
 
 
 def script_functions(
-    presentation: PresentationType,
+    project: Project,
     token: str,
 ) -> dict[str, Callable]:
+
+    presentation = project.presentation
 
     def _slide(slide_index: int) -> Slide:
         try:
@@ -80,15 +89,30 @@ def script_functions(
                 "slide's layout."
             ) from None
 
+    def set_master(master: str) -> None:
+
+        if master not in _ops.list_masters(presentation):
+            raise ValueError(
+                f"Master '{master}' not found. Use a name from `masters`."
+            )
+
+        project.master_name = master
+
     def add_slide(layout: str, index: int | None = None) -> int:
 
-        for master in presentation.slide_masters:
-            layout_obj = master.slide_layouts.get_by_name(layout)
-            if layout_obj is not None:
-                break
-        else:
+        if project.master_name is None:
             raise ValueError(
-                f"Layout '{layout}' not found. Use a name from `layouts`."
+                "No master selected. Call set_master(...) first, "
+                "using a name from `masters`."
+            )
+
+        master = _ops.list_masters(presentation)[project.master_name]
+
+        layout_obj = master.slide_layouts.get_by_name(layout)
+        if layout_obj is None:
+            raise ValueError(
+                f"Layout '{layout}' not found in master "
+                f"'{project.master_name}'. Use a name from `masters`."
             )
 
         presentation.slides.add_slide(layout_obj)
@@ -176,6 +200,7 @@ def script_functions(
         _ops.remove_slides(presentation, indices)
 
     return {
+        "set_master": set_master,
         "add_slide": add_slide,
         "fill": fill,
         "set_notes": set_notes,

@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 @dataclass
 class Project:
     presentation: PresentationType
+    master_name: str | None = None
     lock: Lock = field(default_factory=Lock)
 
 
@@ -26,6 +27,12 @@ class PlaceholderInfo(BaseModel):
 class LayoutInfo(BaseModel):
     placeholders: list[PlaceholderInfo] = Field(
         description="Text placeholders the layout offers.",
+    )
+
+
+class MasterInfo(BaseModel):
+    layouts: dict[str, LayoutInfo] = Field(
+        description="Layout name -> its placeholders.",
     )
 
 
@@ -61,10 +68,10 @@ class ProjectResult(BaseModel):
 
 
 class StartResult(ProjectResult):
-    layouts: dict[str, LayoutInfo] = Field(
+    masters: dict[str, MasterInfo] = Field(
         description=(
-            "Layout name -> its placeholders, across all masters. Everything "
-            "`run_script` may use."
+            "Master name -> its layouts. `add_slide` only accepts layouts "
+            "of the master selected via `set_master`."
         ),
     )
 

@@ -120,6 +120,10 @@ def list_block_infos(
             if not text and block._p.xpath(".//w:drawing"):
                 text = "[image]"
 
+            # Its sectPr carries the page setup of all content above it.
+            if block._p.xpath("./w:pPr/w:sectPr"):
+                text = f"[section break] {text}".rstrip()
+
             block_infos.append(BlockInfo(type="paragraph", text=text))
         elif isinstance(block, Table):
             block_infos.append(BlockInfo(

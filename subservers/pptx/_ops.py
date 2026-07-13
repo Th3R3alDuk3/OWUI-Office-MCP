@@ -9,9 +9,9 @@ from pptx.enum.chart import XL_CHART_TYPE
 from pptx.oxml.presentation import CT_SlideId, CT_SlideIdList
 from pptx.presentation import Presentation as PresentationType
 from pptx.shapes.base import BaseShape
-from pptx.slide import Slide
+from pptx.slide import Slide, SlideMaster
 
-from models.pptx import LayoutInfo, PlaceholderInfo, SlideInfo
+from models.pptx import LayoutInfo, MasterInfo, PlaceholderInfo, SlideInfo
 
 logger = get_logger(__name__)
 
@@ -57,13 +57,34 @@ def list_template_names(
     return template_names
 
 
-def list_layout_infos(
+def list_masters(
     presentation: PresentationType,
-) -> dict[str, LayoutInfo]:
+) -> dict[str, SlideMaster]:
 
-    layout_infos: dict[str, LayoutInfo] = {}
+    masters: dict[str, SlideMaster] = {}
 
-    for master in presentation.slide_masters:
+    for index, master in enumerate(presentation.slide_masters, start=1):
+
+        # Masters are often unnamed, and names may repeat across masters.
+        name = master.name or f"Master {index}"
+        if name in masters:
+            name = f"{name} ({index})"
+
+        masters[name] = master
+
+    return masters
+
+
+def list_master_infos(
+    presentation: PresentationType,
+) -> dict[str, MasterInfo]:
+
+    master_infos: dict[str, MasterInfo] = {}
+
+    for master_name, master in list_masters(presentation).items():
+
+        layouts: dict[str, LayoutInfo] = {}
+
         for layout in master.slide_layouts:
 
             placeholders: list[PlaceholderInfo] = []
@@ -78,9 +99,11 @@ def list_layout_infos(
                     )
                 )
 
-            layout_infos[layout.name] = LayoutInfo(placeholders=placeholders)
+            layouts[layout.name] = LayoutInfo(placeholders=placeholders)
 
-    return layout_infos
+        master_infos[master_name] = MasterInfo(layouts=layouts)
+
+    return master_infos
 
 
 def count_slides(

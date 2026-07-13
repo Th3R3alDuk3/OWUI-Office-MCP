@@ -23,12 +23,18 @@ from subservers.pptx._facade import SCRIPT_API, script_functions
 from subservers.pptx._ops import (
     clear_presentation,
     count_slides,
-    list_layout_infos,
+    list_master_infos,
     list_template_names,
 )
 
 _PPTX_MIME = (
     "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+)
+
+_MASTER_HINT = (
+    "Before adding slides, select the master with `set_master` in "
+    "`run_script` — the one the user asked for, or the best fit if they "
+    "did not name one."
 )
 
 _EDIT_HINT = (
@@ -80,8 +86,8 @@ async def list_templates() -> TemplatesResult:
     description=(
         "Create a new, empty in-memory project from a template. Use this by "
         "default when the user did NOT attach a file. Overwrites any existing "
-        "project for the user. The result lists the template's layouts for "
-        "`run_script`."
+        "project for the user. The result lists the template's masters and "
+        "their layouts for `run_script`."
     ),
 )
 async def create_project(
@@ -107,10 +113,11 @@ async def create_project(
     return StartResult(
         hint=(
             f"Empty project created from template '{template_name}'. "
-            "Build the slides with `run_script`, using the layouts below."
+            f"{_MASTER_HINT} "
+            "Build the slides with `run_script`."
         ),
         slide_count=0,
-        layouts=list_layout_infos(presentation),
+        masters=list_master_infos(presentation),
     )
 
 
@@ -120,7 +127,8 @@ async def create_project(
         "Open a `.pptx` the user attached in OpenWebUI, by its `file_id`. Use "
         "only when the user actually attached a file; if none was given, use "
         "`create_project` instead. Overwrites any existing project for the "
-        "user. The result lists the file's layouts for `run_script`."
+        "user. The result lists the file's masters and their layouts for "
+        "`run_script`."
     ),
 )
 async def open_project(
@@ -151,11 +159,12 @@ async def open_project(
     return StartResult(
         hint=(
             f"Project opened from attached file '{file_id}'. "
+            f"{_MASTER_HINT} "
             "Inspect and edit it with `run_script` (`list_slides()` shows "
-            "the existing slides), using the layouts below for new slides."
+            "the existing slides)."
         ),
         slide_count=count_slides(presentation),
-        layouts=list_layout_infos(presentation),
+        masters=list_master_infos(presentation),
     )
 
 
@@ -174,7 +183,7 @@ async def run_script(
 
         output = await run_sandboxed(
             code,
-            functions=script_functions(project.presentation, token.token),
+            functions=script_functions(project, token.token),
         )
 
         _store.touch(user_id, project)

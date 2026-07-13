@@ -48,6 +48,8 @@ sandboxed: no imports, no file or network access. Available functions:
   an opened document.
 - list_blocks() -> list[dict]
   Body blocks in order (type, text); the list position is the block index.
+  A `[section break]` paragraph carries the page setup of the content
+  above it — never remove or move it.
 - move_block(from_index: int, to_index: int) -> None
 - remove_blocks(indices: list[int]) -> None
 

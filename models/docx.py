@@ -26,7 +26,8 @@ class BlockInfo(BaseModel):
     )
     text: str = Field(
         description=(
-            "Paragraph text (`[image]` for image paragraphs), or a size "
+            "Paragraph text (`[image]` for image paragraphs, "
+            "`[section break]` for section-break paragraphs), or a size "
             "preview for tables."
         ),
     )
