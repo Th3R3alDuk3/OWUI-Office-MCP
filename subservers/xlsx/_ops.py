@@ -208,6 +208,11 @@ def insert_picture(
 
     picture = Image(image)
 
+    # openpyxl re-reads and closes the image buffer on every save; pin the
+    # bytes once so the workbook survives a second `finalize_project`.
+    data = picture._data()
+    picture._data = lambda: data
+
     if picture.width > _MAX_PICTURE_WIDTH:
         picture.height = round(
             picture.height * _MAX_PICTURE_WIDTH / picture.width

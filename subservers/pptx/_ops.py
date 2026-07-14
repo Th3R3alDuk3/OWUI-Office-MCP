@@ -4,6 +4,8 @@ from pathlib import Path
 
 from fastmcp.utilities.logging import get_logger
 from pptx import Presentation
+from pptx.opc.constants import RELATIONSHIP_TYPE as RT
+from pptx.oxml import parse_xml
 from pptx.chart.data import CategoryChartData
 from pptx.enum.chart import XL_CHART_TYPE
 from pptx.oxml.presentation import CT_SlideId, CT_SlideIdList
@@ -65,8 +67,16 @@ def list_masters(
 
     for index, master in enumerate(presentation.slide_masters, start=1):
 
-        # Masters are often unnamed, and names may repeat across masters.
-        name = master.name or f"Master {index}"
+        # PowerPoint-native files leave masters unnamed and show the theme
+        # name instead; names may still repeat across masters.
+        name = master.name
+    
+        if not name:
+            theme_part = master.part.part_related_by(RT.THEME)
+            name = parse_xml(theme_part.blob).get("name")
+    
+        name = name or f"Master {index}"
+    
         if name in masters:
             name = f"{name} ({index})"
 
