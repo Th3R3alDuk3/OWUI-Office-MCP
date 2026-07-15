@@ -11,6 +11,7 @@ from pydantic import Field
 from config import get_settings
 from models.pptx import (
     FinalizeResult,
+    LayoutsResult,
     Project,
     ScriptResult,
     StartResult,
@@ -23,7 +24,8 @@ from subservers.pptx._facade import SCRIPT_API, script_functions
 from subservers.pptx._ops import (
     clear_presentation,
     count_slides,
-    list_master_infos,
+    list_layout_placeholders,
+    list_masters,
     list_template_names,
 )
 
@@ -32,9 +34,10 @@ _PPTX_MIME = (
 )
 
 _MASTER_HINT = (
-    "Before adding slides, select the master with `set_master` in "
-    "`run_script` — the one the user asked for, or the best fit if they "
-    "did not name one."
+    "Before adding slides: pick the master the user asked for; if several "
+    "could fit and the user named none, ask the user which one to use "
+    "instead of guessing. Then call `list_layouts` for its layouts and "
+    "build with `run_script`, selecting the master there via `set_master`."
 )
 
 _EDIT_HINT = (
@@ -73,7 +76,9 @@ async def list_templates() -> TemplatesResult:
     templates = await to_thread(list_template_names, _settings.templates_dir)
 
     hint = (
-        "Pick a template and call `create_project`."
+        "Pick a template and call `create_project`. If several could fit "
+        "and the user named none, ask the user which one to use instead "
+        "of guessing."
     ) if templates else (
         "No templates available. Ask the administrator to add `.pptx` templates."
     )
@@ -86,8 +91,8 @@ async def list_templates() -> TemplatesResult:
     description=(
         "Create a new, empty in-memory project from a template. Use this by "
         "default when the user did NOT attach a file. Overwrites any existing "
-        "project for the user. The result lists the template's masters and "
-        "their layouts for `run_script`."
+        "project for the user. The result lists the template's master names "
+        "for `list_layouts` and `set_master`."
     ),
 )
 async def create_project(
@@ -113,11 +118,10 @@ async def create_project(
     return StartResult(
         hint=(
             f"Empty project created from template '{template_name}'. "
-            f"{_MASTER_HINT} "
-            "Build the slides with `run_script`."
+            f"{_MASTER_HINT}"
         ),
         slide_count=0,
-        masters=list_master_infos(presentation),
+        masters=list(list_masters(presentation)),
     )
 
 
@@ -127,8 +131,8 @@ async def create_project(
         "Open a `.pptx` the user attached in OpenWebUI, by its `file_id`. Use "
         "only when the user actually attached a file; if none was given, use "
         "`create_project` instead. Overwrites any existing project for the "
-        "user. The result lists the file's masters and their layouts for "
-        "`run_script`."
+        "user. The result lists the file's master names for `list_layouts` "
+        "and `set_master`."
     ),
 )
 async def open_project(
@@ -160,12 +164,46 @@ async def open_project(
         hint=(
             f"Project opened from attached file '{file_id}'. "
             f"{_MASTER_HINT} "
-            "Inspect and edit it with `run_script` (`list_slides()` shows "
-            "the existing slides)."
+            "`list_slides()` in `run_script` shows the existing slides."
         ),
         slide_count=count_slides(presentation),
-        masters=list_master_infos(presentation),
+        masters=list(list_masters(presentation)),
     )
+
+
+@mcp.tool(
+    name="list_layouts",
+    description=(
+        "List one master's layouts and their placeholders. Call this after "
+        "picking a master (from `masters` in the `create_project` / "
+        "`open_project` result) and before writing the `run_script` code "
+        "that builds slides with them."
+    ),
+)
+async def list_layouts(
+    master: str = Field(description="Master name from `masters`."),
+    user_id: str = TokenClaim("id"),
+    project: Project = Depends(_store.require),
+) -> LayoutsResult:
+
+    async with project.lock:
+
+        masters = list_masters(project.presentation)
+
+        if master not in masters:
+            raise ValueError(
+                f"Master '{master}' not found. Use a name from `masters`."
+            )
+
+        _store.touch(user_id, project)
+
+        return LayoutsResult(
+            hint=(
+                "Select this master via `set_master` in `run_script`, then "
+                "build the slides with these layouts."
+            ),
+            layouts=list_layout_placeholders(masters[master]),
+        )
 
 
 @mcp.tool(

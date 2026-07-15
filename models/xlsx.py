@@ -51,8 +51,8 @@ class StartResult(ProjectResult):
     )
     styles: list[str] = Field(
         description=(
-            "Named cell styles of the template. Everything `run_script` "
-            "may use."
+            "Named cell styles of the file. Only these exist; everything "
+            "`run_script` may use."
         ),
     )
 

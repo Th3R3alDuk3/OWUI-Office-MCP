@@ -69,7 +69,9 @@ async def list_templates() -> TemplatesResult:
     templates = await to_thread(list_template_names, _settings.templates_dir)
 
     hint = (
-        "Pick a template and call `create_project`."
+        "Pick a template and call `create_project`. If several could fit "
+        "and the user named none, ask the user which one to use instead "
+        "of guessing."
     ) if templates else (
         "No templates available. Ask the administrator to add `.xlsx` templates."
     )

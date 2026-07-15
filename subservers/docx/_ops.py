@@ -10,7 +10,7 @@ from docx.text.paragraph import Paragraph
 from fastmcp.utilities.logging import get_logger
 from matplotlib.figure import Figure
 
-from models.docx import BlockInfo, StyleInfo
+from models.docx import BlockInfo, StyleGroups
 
 logger = get_logger(__name__)
 
@@ -46,23 +46,35 @@ def list_template_names(
     return template_names
 
 
-def list_style_infos(
+def list_style_groups(
     document: DocumentType,
-) -> dict[str, StyleInfo]:
+) -> StyleGroups:
 
-    style_infos: dict[str, StyleInfo] = {}
+    groups = StyleGroups(
+        custom_paragraph=[],
+        custom_table=[],
+        builtin_paragraph=[],
+        builtin_table=[],
+    )
 
     for style in document.styles:
 
-        if style.type not in {WD_STYLE_TYPE.PARAGRAPH, WD_STYLE_TYPE.TABLE}:
+        if style.type == WD_STYLE_TYPE.PARAGRAPH:
+            target = (
+                groups.builtin_paragraph if style.builtin
+                else groups.custom_paragraph
+            )
+        elif style.type == WD_STYLE_TYPE.TABLE:
+            target = (
+                groups.builtin_table if style.builtin
+                else groups.custom_table
+            )
+        else:
             continue
 
-        style_infos[style.name] = StyleInfo(
-            type=str(style.type),
-            builtin=bool(style.builtin),
-        )
+        target.append(style.name)
 
-    return style_infos
+    return groups
 
 
 def _block_elements(

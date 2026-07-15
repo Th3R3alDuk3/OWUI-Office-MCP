@@ -11,12 +11,24 @@ class Project:
     lock: Lock = field(default_factory=Lock)
 
 
-class StyleInfo(BaseModel):
-    type: str = Field(
-        description="Style type: paragraph or table.",
+class StyleGroups(BaseModel):
+    custom_paragraph: list[str] = Field(
+        description=(
+            "The template's own paragraph styles — prefer these; they "
+            "carry the corporate design."
+        ),
     )
-    builtin: bool = Field(
-        description="Whether the style is a Word built-in.",
+    custom_table: list[str] = Field(
+        description=(
+            "The template's own table styles — prefer these; they carry "
+            "the corporate design."
+        ),
+    )
+    builtin_paragraph: list[str] = Field(
+        description="Word built-in paragraph styles defined in the file.",
+    )
+    builtin_table: list[str] = Field(
+        description="Word built-in table styles defined in the file.",
     )
 
 
@@ -56,10 +68,10 @@ class ProjectResult(BaseModel):
 
 
 class StartResult(ProjectResult):
-    styles: dict[str, StyleInfo] = Field(
+    styles: StyleGroups = Field(
         description=(
-            "Style name -> type and builtin flag, across the whole template. "
-            "Everything `run_script` may use."
+            "Style names `run_script` may use, grouped by kind. Only these "
+            "exist in the file."
         ),
     )
 

@@ -12,30 +12,6 @@ class Project:
     lock: Lock = field(default_factory=Lock)
 
 
-class PlaceholderInfo(BaseModel):
-    idx: int = Field(
-        description="Placeholder id; target it with `fill` in `run_script`.",
-    )
-    name: str = Field(
-        description="Human-readable placeholder name.",
-    )
-    type: str = Field(
-        description="Placeholder type, e.g. TITLE or BODY.",
-    )
-
-
-class LayoutInfo(BaseModel):
-    placeholders: list[PlaceholderInfo] = Field(
-        description="Text placeholders the layout offers.",
-    )
-
-
-class MasterInfo(BaseModel):
-    layouts: dict[str, LayoutInfo] = Field(
-        description="Layout name -> its placeholders.",
-    )
-
-
 class SlideInfo(BaseModel):
     layout: str = Field(
         description="Layout name the slide is based on.",
@@ -68,10 +44,26 @@ class ProjectResult(BaseModel):
 
 
 class StartResult(ProjectResult):
-    masters: dict[str, MasterInfo] = Field(
+    masters: list[str] = Field(
         description=(
-            "Master name -> its layouts. `add_slide` only accepts layouts "
-            "of the master selected via `set_master`."
+            "Master names. Pick one (ask the user if unclear), inspect it "
+            "with `list_layouts`, then select it via `set_master` in "
+            "`run_script`."
+        ),
+    )
+
+
+class LayoutsResult(BaseModel):
+    hint: str = Field(
+        description=(
+            "Suggested next step — guidance for the agent, not part of the data."
+        ),
+    )
+    layouts: dict[str, dict[int, str]] = Field(
+        description=(
+            "Layout name (for `add_slide`) -> placeholder idx -> placeholder "
+            "type, e.g. TITLE or BODY. Target placeholders by idx in `fill`, "
+            "`add_image` and `add_chart`."
         ),
     )
 

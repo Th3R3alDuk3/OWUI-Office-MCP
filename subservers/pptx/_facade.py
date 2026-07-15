@@ -16,12 +16,13 @@ sandboxed: no imports, no file or network access. Available functions:
 - set_master(master: str) -> None
   Select the slide master to build with, by name (see `masters` in the
   `create_project` / `open_project` result); required before `add_slide`.
-  Pick the one the user asked for, or the best fit if they did not name
-  one; in an opened file, prefer the master its slides already use.
+  Pick the master the user asked for; in an opened file, prefer the
+  master its slides already use. If several masters could fit and the
+  user named none, ask the user which one to use instead of guessing.
 - add_slide(layout: str, index: int | None = None) -> int
-  Add a slide by layout name from the selected master (see `masters` in
-  the `create_project` / `open_project` result); returns its zero-based
-  slide index.
+  Add a slide by layout name from the selected master (see the
+  `list_layouts` tool; call it before writing the script); returns the
+  slide's zero-based index.
 - fill(slide_index: int, placeholder_idx: int, text: str) -> None
   Set placeholder text. Each line becomes a paragraph; prefix lines with
   tabs to nest them as sub-bullets (one tab per level).
@@ -81,9 +82,10 @@ def script_functions(
             ) from None
 
     def _placeholder(slide: Slide, placeholder_idx: int) -> BaseShape:
+        # `list_layouts` serializes the idx keys as strings; accept both.
         try:
-            return slide.placeholders[placeholder_idx]
-        except KeyError:
+            return slide.placeholders[int(placeholder_idx)]
+        except (KeyError, TypeError, ValueError):
             raise ValueError(
                 f"Placeholder idx {placeholder_idx} not found on this "
                 "slide's layout."
@@ -112,7 +114,7 @@ def script_functions(
         if layout_obj is None:
             raise ValueError(
                 f"Layout '{layout}' not found in master "
-                f"'{project.master_name}'. Use a name from `masters`."
+                f"'{project.master_name}'. Use a name from `list_layouts`."
             )
 
         presentation.slides.add_slide(layout_obj)

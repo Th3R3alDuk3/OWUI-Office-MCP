@@ -23,7 +23,7 @@ from subservers.docx._facade import SCRIPT_API, script_functions
 from subservers.docx._ops import (
     clear_document,
     count_blocks,
-    list_style_infos,
+    list_style_groups,
     list_template_names,
 )
 
@@ -67,7 +67,9 @@ async def list_templates() -> TemplatesResult:
     templates = await to_thread(list_template_names, _settings.templates_dir)
 
     hint = (
-        "Pick a template and call `create_project`."
+        "Pick a template and call `create_project`. If several could fit "
+        "and the user named none, ask the user which one to use instead "
+        "of guessing."
     ) if templates else (
         "No templates available. Ask the administrator to add `.docx` templates."
     )
@@ -110,7 +112,7 @@ async def create_project(
             "Build the document with `run_script`, using the styles below."
         ),
         block_count=0,
-        styles=list_style_infos(document),
+        styles=list_style_groups(document),
     )
 
 
@@ -155,7 +157,7 @@ async def open_project(
             "the existing content), using the styles below for new blocks."
         ),
         block_count=count_blocks(document),
-        styles=list_style_infos(document),
+        styles=list_style_groups(document),
     )
 
 

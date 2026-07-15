@@ -4,16 +4,16 @@ from pathlib import Path
 
 from fastmcp.utilities.logging import get_logger
 from pptx import Presentation
-from pptx.opc.constants import RELATIONSHIP_TYPE as RT
-from pptx.oxml import parse_xml
 from pptx.chart.data import CategoryChartData
 from pptx.enum.chart import XL_CHART_TYPE
+from pptx.opc.constants import RELATIONSHIP_TYPE as RT
+from pptx.oxml import parse_xml
 from pptx.oxml.presentation import CT_SlideId, CT_SlideIdList
 from pptx.presentation import Presentation as PresentationType
 from pptx.shapes.base import BaseShape
 from pptx.slide import Slide, SlideMaster
 
-from models.pptx import LayoutInfo, MasterInfo, PlaceholderInfo, SlideInfo
+from models.pptx import SlideInfo
 
 logger = get_logger(__name__)
 
@@ -70,13 +70,13 @@ def list_masters(
         # PowerPoint-native files leave masters unnamed and show the theme
         # name instead; names may still repeat across masters.
         name = master.name
-    
+
         if not name:
             theme_part = master.part.part_related_by(RT.THEME)
             name = parse_xml(theme_part.blob).get("name")
-    
+
         name = name or f"Master {index}"
-    
+
         if name in masters:
             name = f"{name} ({index})"
 
@@ -85,35 +85,25 @@ def list_masters(
     return masters
 
 
-def list_master_infos(
-    presentation: PresentationType,
-) -> dict[str, MasterInfo]:
+def list_layout_placeholders(
+    master: SlideMaster,
+) -> dict[str, dict[int, str]]:
 
-    master_infos: dict[str, MasterInfo] = {}
+    layouts: dict[str, dict[int, str]] = {}
 
-    for master_name, master in list_masters(presentation).items():
+    for layout in master.slide_layouts:
 
-        layouts: dict[str, LayoutInfo] = {}
+        placeholders: dict[int, str] = {}
 
-        for layout in master.slide_layouts:
+        for placeholder in layout.placeholders:
+            placeholder_format = placeholder.placeholder_format
+            placeholders[placeholder_format.idx] = (
+                placeholder_format.type.name
+            )
 
-            placeholders: list[PlaceholderInfo] = []
+        layouts[layout.name] = placeholders
 
-            for placeholder in layout.placeholders:
-
-                placeholders.append(
-                    PlaceholderInfo(
-                        idx=placeholder.placeholder_format.idx,
-                        name=placeholder.name,
-                        type=str(placeholder.placeholder_format.type),
-                    )
-                )
-
-            layouts[layout.name] = LayoutInfo(placeholders=placeholders)
-
-        master_infos[master_name] = MasterInfo(layouts=layouts)
-
-    return master_infos
+    return layouts
 
 
 def count_slides(

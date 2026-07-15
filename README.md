@@ -35,7 +35,8 @@ uploads the result to OpenWebUI as a download link.
   in-memory project per user and toolset, per-user rate limiting, TTL sweep
 - **Agent-friendly** — every tool result carries a `hint` with the
   suggested next step, and `create_project` / `open_project` return the
-  available layouts and styles up front
+  available masters, styles and sheets; a pptx master's layouts load on
+  demand via `list_layouts`, keeping the context small
 
 ## ⚡ Code execution
 
@@ -117,13 +118,14 @@ Each subserver is mounted under its file extension as a namespace (`pptx_*`,
 `docx_*`, `xlsx_*`). Per user and toolset there is one in-memory project
 (keyed on the JWT's `id` claim, sliding TTL, auto-sweep — no disk writes).
 
-All three toolsets expose the same five tools:
+All three toolsets expose the same five tools; `pptx` adds a sixth:
 
 | Tool | |
 |---|---|
 | `list_templates` | available templates for the toolset |
 | `create_project` | new, empty project from a template |
 | `open_project` | open a file attached in OpenWebUI by `file_id` |
+| `list_layouts` | one master's layouts and placeholders (`pptx` only) |
 | `run_script` | build/edit the project with one sandboxed Python script |
 | `finalize_project` | serialize the project and upload it to OpenWebUI |
 
