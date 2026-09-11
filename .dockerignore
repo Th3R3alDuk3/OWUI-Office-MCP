@@ -1,8 +1,11 @@
-.git/
-.gitignore
-.dockerignore
-.github/
-
-.env
-.venv/
-__pycache__/
+# Allow-list: only what the image runs.
+*
+!config.py
+!main.py
+!models/
+!office/
+!services/
+!templates/
+!pyproject.toml
+!uv.lock
+**/__pycache__/
