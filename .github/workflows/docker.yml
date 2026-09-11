@@ -1,9 +1,10 @@
 name: Docker
 
-# Build on every push to main and on version tags; validate (build only) on PRs.
+# Build on every push to main (latest) and dev (dev) and on version tags;
+# validate (build only) on PRs.
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
     tags: ["*.*.*", "v*.*.*"]
   pull_request:
     branches: [main]

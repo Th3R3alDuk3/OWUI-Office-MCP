@@ -179,9 +179,9 @@ busy error, and each OfficeCLI call costs about a second of startup.
 ## 📦 Docker deployment
 
 Prebuilt images are published to **ghcr.io** on pushes to `main` (`latest`)
-and on version tags (`X.Y.Z`); OfficeCLI is baked in, pinned by version and
-checksum, together with a headless Chromium and Office-compatible fonts for
-previews.
+and `dev` (`dev`) and on version tags (`X.Y.Z`); OfficeCLI is baked in,
+pinned by version and checksum, together with a headless Chromium and
+Office-compatible fonts for previews.
 
 ```bash
 docker run -d -p 8000:8000 \
