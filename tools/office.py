@@ -1,39 +1,36 @@
-from asyncio import CancelledError, create_task, to_thread
+from asyncio import to_thread
 from collections import Counter
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 from functools import partial
 from json import dumps
-from shutil import copyfile
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from fastmcp import FastMCP
 from fastmcp.dependencies import CurrentAccessToken, TokenClaim
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AccessToken
-from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.lifespan import lifespan
 from fastmcp.tools import ToolResult, tool
 from fastmcp.utilities.types import File, Image
 from mcp.types import TextContent, ToolAnnotations
-from py_landlock import get_abi_version
 from pydantic import Field, JsonValue
 
 from config import get_settings
-from models.guard import Command
 from models.inventory import PptxInventory
 from models.project import (
+    Command,
     CommandsResult,
     DesignMode,
     ExportResult,
     Format,
-    PptxTemplate,
     ReferenceResult,
     StartResult,
     Template,
     TemplatesResult,
 )
-from office import _guard, _officecli, _projects, _templates, pptx
-from office._formats import FORMATS
+from tools._office import guard, officecli, pptx, projects
 from services.owui import upload_file
 
 _settings = get_settings()
@@ -48,24 +45,17 @@ async def office_lifespan(
     server: FastMCP,
 ):
 
-    # Refuses to start rather than run OfficeCLI unconfined; below ABI 4
-    # (Linux 6.7) Landlock silently leaves the network open.
-    if get_abi_version() < 4:
+    # Below ABI 4 (Linux 6.7) Landlock cannot restrict the network.
+    if officecli.LANDLOCK_ABI < 4:
         raise RuntimeError("Landlock ABI 4 or newer is needed to confine OfficeCLI.")
 
-    await to_thread(_projects.start)
-    await _templates.start()
-
-    task = create_task(_projects.sweep())
+    await projects.valkey.ping()
+    await projects.prepare_templates()
 
     try:
         yield
     finally:
-
-        task.cancel()
-
-        with suppress(CancelledError):
-            await task
+        await projects.valkey.aclose()
 
 
 @asynccontextmanager
@@ -107,16 +97,17 @@ async def list_templates() -> TemplatesResult:
 
     templates: list[Template] = []
 
-    for name, prepared in _templates.stored.items():
+    for name, prepared in projects.templates.items():
 
-        if isinstance(inventory := prepared.inventory, PptxInventory):
-            templates.append(PptxTemplate(
-                name=name,
-                format=prepared.module.FORMAT,
-                masters={master.index: master.name for master in inventory.masters},
-            ))
-        else:
-            templates.append(Template(name=name, format=prepared.module.FORMAT))
+        inventory = prepared.inventory
+        templates.append(Template(
+            name=name,
+            format=prepared.module.FORMAT,
+            masters=(
+                {master.index: master.name for master in inventory.masters}
+                if isinstance(inventory, PptxInventory) else None
+            ),
+        ))
 
     return TemplatesResult(
         hint=(
@@ -152,14 +143,14 @@ async def list_templates() -> TemplatesResult:
 async def create_project(
     template_name: str | None = Field(
         default=None,
-        description="Stored template from `list_templates`; or pass `file_id`.",
+        description="Stored template from `list_templates`.",
     ),
     file_id: str | None = Field(
         default=None,
         pattern=r"^[A-Za-z0-9-]{1,64}$",
         description=(
-            "OpenWebUI file ID of a file the user attached as the design; or "
-            "pass `template_name`. NOT a template name, and never invented."
+            "OpenWebUI file ID of the attached design; never a template name, "
+            "never invented."
         ),
     ),
     master: int | None = Field(
@@ -174,45 +165,50 @@ async def create_project(
     user_id: str = TokenClaim("id"),
 ) -> StartResult:
 
-    async with _admitted(user_id), _projects.create(user_id) as directory:
+    async with _admitted(user_id):
 
-        match template_name, file_id:
+        await projects.check_limit(user_id)
 
-            case str(), None:
-                if (prepared := _templates.stored.get(template_name)) is None:
-                    raise ToolError(
-                        f"Template '{template_name}' not found. Pick one "
-                        "from `list_templates`."
+        with TemporaryDirectory() as scratch:
+
+            directory = Path(scratch)
+
+            match template_name, file_id:
+
+                case str(), None:
+                    if (prepared := projects.templates.get(template_name)) is None:
+                        raise ToolError(
+                            f"Template '{template_name}' not found. Pick one "
+                            "from `list_templates`."
+                        )
+                    module, inventory, baseline = (
+                        prepared.module, prepared.inventory, prepared.baseline,
                     )
-                module, inventory = prepared.module, prepared.inventory
-                baseline = prepared.baseline
-                await to_thread(
-                    copyfile,
-                    prepared.document, directory / f"document.{module.FORMAT}",
-                )
-                origin = f"template '{template_name}'"
+                    document = directory / f"document.{module.FORMAT}"
+                    await to_thread(document.write_bytes, prepared.document)
+                    origin = f"template '{template_name}'"
 
-            case None, str():
-                module = await _projects.receive(directory, file_id, token.token)
-                document = directory / f"document.{module.FORMAT}"
-                await module.prepare(document)
-                inventory = await module.inventory(document)
-                baseline = await _officecli.findings(document)
-                origin = f"the design of attached file '{file_id}'"
+                case None, str():
+                    module = await projects.fetch_upload(directory, file_id, token.token)
+                    document = directory / f"document.{module.FORMAT}"
+                    await module.prepare(document)
+                    inventory = await module.inventory(document)
+                    baseline = await officecli.findings(document)
+                    origin = f"the design of attached file '{file_id}'"
 
-            case _:
-                raise ToolError("Pass either `template_name` or `file_id`.")
+                case _:
+                    raise ToolError("Pass either `template_name` or `file_id`.")
 
-        inventory = module.bind(inventory, master)
-        if isinstance(inventory, PptxInventory):
-            await to_thread(
-                pptx.check, directory / f"document.{module.FORMAT}", inventory,
-            )
-        _projects.publish(directory, inventory, baseline)
+            if isinstance(inventory, PptxInventory):
+                inventory = pptx.bind(inventory, master)
+                await to_thread(pptx.check, document, inventory)
+            elif master is not None:
+                raise ToolError("`master` applies to pptx designs only.")
+            project_id = await projects.publish(user_id, document, inventory, baseline)
 
     return StartResult(
         hint=f"Project created from {origin}. {module.START_HINT}",
-        project_id=directory.name,
+        project_id=project_id,
         format=module.FORMAT,
         inventory=inventory,
     )
@@ -234,8 +230,8 @@ async def open_project(
     file_id: str = Field(
         pattern=r"^[A-Za-z0-9-]{1,64}$",
         description=(
-            "OpenWebUI file ID of the file the user attached. NOT a template "
-            "name from `list_templates`, and never invented."
+            "OpenWebUI file ID of the attached file; never a template name, "
+            "never invented."
         ),
     ),
     master: int | None = Field(
@@ -250,13 +246,24 @@ async def open_project(
     user_id: str = TokenClaim("id"),
 ) -> StartResult:
 
-    async with _admitted(user_id), _projects.create(user_id) as directory:
-        module = await _projects.receive(directory, file_id, token.token)
-        document = directory / f"document.{module.FORMAT}"
-        inventory = module.bind(await module.inventory(document), master)
-        if isinstance(inventory, PptxInventory):
-            await to_thread(pptx.check, document, inventory)
-        _projects.publish(directory, inventory, await _officecli.findings(document))
+    async with _admitted(user_id):
+
+        await projects.check_limit(user_id)
+
+        with TemporaryDirectory() as scratch:
+
+            directory = Path(scratch)
+            module = await projects.fetch_upload(directory, file_id, token.token)
+            document = directory / f"document.{module.FORMAT}"
+            inventory = await module.inventory(document)
+            if isinstance(inventory, PptxInventory):
+                inventory = pptx.bind(inventory, master)
+                await to_thread(pptx.check, document, inventory)
+            elif master is not None:
+                raise ToolError("`master` applies to pptx designs only.")
+            project_id = await projects.publish(
+                user_id, document, inventory, await officecli.findings(document),
+            )
 
     return StartResult(
         hint=(
@@ -264,7 +271,7 @@ async def open_project(
             'first, e.g. {"command": "view", "mode": "outline"}. '
             f"{module.START_HINT}"
         ),
-        project_id=directory.name,
+        project_id=project_id,
         format=module.FORMAT,
         inventory=inventory,
     )
@@ -309,17 +316,19 @@ async def run_commands(
     user_id: str = TokenClaim("id"),
 ) -> CommandsResult:
 
-    project = _projects.get(user_id, project_id)
-
-    async with _admitted(user_id), _projects.locked(project):
-        batch = await _guard.check(
+    async with (
+        _admitted(user_id),
+        projects.locked(user_id, project_id) as lock,
+        projects.load(user_id, project_id) as project,
+    ):
+        batch = await guard.check(
             commands,
             module=project.module,
             inventory=project.inventory,
             design_mode=design_mode,
-            fetch=partial(_projects.add_asset, project, token=token.token),
+            fetch=partial(projects.add_asset, project, token=token.token),
         )
-        results = await _projects.apply(project, batch)
+        results = await projects.apply(project, batch, lock)
 
     outputs: list[JsonValue] = []
 
@@ -370,10 +379,10 @@ async def get_reference(
     user_id: str = TokenClaim("id"),
 ) -> ReferenceResult:
 
-    module = FORMATS[format]
+    module = projects.FORMATS[format]
 
     async with _admitted(user_id):
-        reference = await _officecli.help(
+        reference = await officecli.help(
             format, topic, module.CONTENT_PROPS | module.APPEARANCE_PROPS,
         )
 
@@ -390,10 +399,11 @@ async def get_reference(
     name="preview_project",
     tags={"office", "preview"},
     description=(
-        "Render one slide (PPTX) or page (DOCX) of the project as an image, or "
-        "the first sheet (XLSX), to check the result visually: overflowing or "
-        "overlapping content, empty placeholders, broken layouts. Use it after "
-        "building or larger edits, not after every change."
+        "Render the project as an image to check the result visually: the "
+        "whole document as thumbnails, or one slide (PPTX) or page (DOCX) in "
+        "full size; XLSX shows the first sheet. Look for overflowing or "
+        "overlapping content, empty placeholders and broken layouts. Use it "
+        "after building or larger edits, not after every change."
     ),
     annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
 )
@@ -402,26 +412,29 @@ async def preview_project(
         pattern=r"^[0-9a-f]{16}$",
         description="From `create_project` or `open_project`.",
     ),
-    page: int = Field(
-        default=1,
+    page: int | None = Field(
+        default=None,
         ge=1,
-        description="Slide or page number; XLSX always shows the first sheet.",
+        description=(
+            "Slide or page number for one page in full size; omit for all "
+            "slides or pages as thumbnails."
+        ),
     ),
     user_id: str = TokenClaim("id"),
 ) -> ToolResult:
 
-    project = _projects.get(user_id, project_id)
+    async with _admitted(user_id), projects.load(user_id, project_id) as project:
+        image = await officecli.screenshot(project.document, page)
 
-    async with _admitted(user_id), _projects.locked(project):
-        image = await _officecli.screenshot(project.document, page)
+    subject = f"Page {page}" if page else "The whole document"
 
     # OpenWebUI passes image resources to the model, image content only to
-    # the user, so the page goes out as both.
+    # the user, so the image goes out as both.
     return ToolResult(content=[
         TextContent(
             type="text",
             text=(
-                f"Page {page} is attached as an image and shown to the user. "
+                f"{subject} is attached as an image and shown to the user. "
                 "It approximates Office's rendering: judge layout, overflow "
                 "and missing content, not pixel details. Text colors from "
                 "the master may render wrong, so never change colors because "
@@ -429,7 +442,7 @@ async def preview_project(
                 "then call `export_project`."
             ),
         ),
-        File(data=image, name=f"page-{page}.png").to_resource_content(
+        File(data=image, name=f"page-{page or 'all'}.png").to_resource_content(
             mime_type="image/png",
         ),
         Image(data=image).to_image_content(),
@@ -461,24 +474,17 @@ async def export_project(
     user_id: str = TokenClaim("id"),
 ) -> ExportResult:
 
-    project = _projects.get(user_id, project_id)
-    upload_name = f"{file_name}.{project.module.FORMAT}"
+    async with _admitted(user_id), projects.load(user_id, project_id) as project:
 
-    async with _admitted(user_id), _projects.locked(project):
-
-        findings = await _officecli.findings(project.document)
-        headers = get_http_headers()
+        upload_name = f"{file_name}.{project.module.FORMAT}"
+        findings = await officecli.findings(project.document)
 
         try:
             owui_url = await upload_file(
-                file=project.document,
                 file_name=upload_name,
+                data=await to_thread(project.document.read_bytes),
                 content_type=project.module.MIME,
                 token=token.token,
-                # OpenWebUI sends these when its connection maps {{CHAT_ID}}
-                # and {{MESSAGE_ID}}; the file then also shows as a chip.
-                chat_id=headers.get("x-openwebui-chat-id"),
-                message_id=headers.get("x-openwebui-message-id"),
             )
         except RuntimeError as error:
             raise ToolError(

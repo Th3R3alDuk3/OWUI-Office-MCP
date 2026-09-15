@@ -1,0 +1,39 @@
+name: owui-office-mcp
+
+services:
+
+  server:
+    build: .
+    image: ghcr.io/th3r3alduk3/owui-office-mcp
+    container_name: owui-office-mcp
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file: .env
+    read_only: true
+    tmpfs:
+      - /tmp
+    # Python, OfficeCLI runs and Chromium together; scale it with
+    # OFFICECLI_MAX_PROCESSES and MAX_CONCURRENT_REQUESTS.
+    mem_limit: 4g
+    depends_on:
+      - valkey
+
+  valkey:
+    image: valkey/valkey:9-alpine
+    restart: unless-stopped
+    # Drafts: bounded, LRU-evicted, nothing on disk.
+    command: valkey-server --maxmemory 1gb --maxmemory-policy volatile-lru --save ""
+
+  valkey-admin:
+    image: valkey/valkey-admin:1.1.0
+    restart: unless-stopped
+    # No login, so localhost only.
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      DEPLOYMENT_MODE: Web
+      VALKEY_HOST: valkey
+      VALKEY_PORT: "6379"
+    depends_on:
+      - valkey

@@ -1,16 +1,12 @@
-import re
-from asyncio import (
-    Semaphore, StreamReader, create_subprocess_exec, create_task, gather,
-    timeout, to_thread,
-)
+from asyncio import Semaphore, create_subprocess_exec, timeout, to_thread
 from asyncio.subprocess import PIPE
 from contextlib import suppress
+from ctypes import CDLL
 from json import JSONDecodeError, dumps, loads
 from os import killpg
 from pathlib import Path
 from signal import SIGKILL
-from sys import executable
-from tempfile import TemporaryDirectory, TemporaryFile
+from tempfile import TemporaryDirectory
 from time import perf_counter
 
 from fastmcp.exceptions import ToolError
@@ -23,42 +19,32 @@ from models.inventory import Theme
 _settings = get_settings()
 _logger = get_logger("office")
 
-_LAUNCHER = Path(__file__).with_name("_sandbox.py").resolve()
+# Both fetched by bin/download.sh, pinned by version and checksum there.
+_LANDRUN = "/usr/local/bin/landrun"
+_OFFICECLI = "/usr/local/bin/officecli"
+
+# landlock_create_ruleset(NULL, 0, LANDLOCK_CREATE_RULESET_VERSION) answers the ABI.
+LANDLOCK_ABI = CDLL(None, use_errno=True).syscall(444, None, 0, 1)
 
 _ENVIRONMENT = {
     "PATH": "/usr/bin:/bin",
     "LANG": "C.UTF-8",
     # The .NET runtime inside OfficeCLI needs ICU unless it runs invariant.
     "DOTNET_SYSTEM_GLOBALIZATION_INVARIANT": "1",
+    # A runaway document kills its own run, not the server.
+    "DOTNET_GCHeapHardLimit": f"{_settings.officecli_max_memory * 2**20:#x}",
     "OFFICECLI_NO_AUTO_RESIDENT": "1",
     "OFFICECLI_NO_AUTO_INSTALL": "1",
     "OFFICECLI_SKIP_UPDATE": "1",
 }
 
-_MAX_STREAM_BYTES = 2**20
 _MAX_SPILL_BYTES = 64 * 2**20
-# The engine names its batch copy in text output, e.g. `view outline`.
-_TEMP_NAME = re.compile(r"\.?\w+\.batch-[0-9a-f]{32}")
 
 # The rest of a reference documents OfficeCLI's own sources.
 _REFERENCE_KEYS = {"element", "parent", "operations", "paths", "children"}
 _PROPERTY_KEYS = {"type", "values", "description", "examples", "add", "set"}
 
 _semaphore = Semaphore(_settings.officecli_max_processes)
-
-
-async def _read_output(
-    stream: StreamReader,
-) -> bytes:
-
-    output = bytearray()
-
-    while chunk := await stream.read(64 * 1024):
-        output.extend(chunk)
-        if len(output) > _MAX_STREAM_BYTES:
-            raise ToolError("OfficeCLI output is too large. Narrow the request.")
-
-    return bytes(output)
 
 
 async def _execute(
@@ -80,42 +66,37 @@ async def _execute(
 
     try:
 
-        process = None
-        readers = []
+        process = await create_subprocess_exec(
+            _LANDRUN, "--best-effort",
+            # /etc/fonts, or screenshots fall back to one font.
+            "--rox", "/usr", "--ro", "/proc,/dev,/etc/fonts",
+            "--rw", f"{cwd},{temp}",
+            *(
+                f"--env={name}={value}"
+                for name, value in {
+                    **_ENVIRONMENT, "HOME": str(temp), "TMPDIR": str(temp),
+                }.items()
+            ),
+            "--", _OFFICECLI, *arguments,
+            cwd=cwd,
+            env={},
+            stdin=PIPE,
+            stdout=PIPE,
+            stderr=PIPE,
+            # Own process group, so a kill also takes its children.
+            start_new_session=True,
+        )
 
-        # A file supplies stdin without a third task competing with the readers.
-        with TemporaryFile(dir=temp) as input_file:
-            try:
-                async with timeout(_settings.officecli_timeout):
-                    await to_thread(input_file.write, stdin)
-                    input_file.seek(0)
-                    process = await create_subprocess_exec(
-                        executable, "-I", str(_LAUNCHER), *arguments,
-                        cwd=cwd,
-                        env={**_ENVIRONMENT, "HOME": str(temp), "TMPDIR": str(temp)},
-                        stdin=input_file,
-                        stdout=PIPE,
-                        stderr=PIPE,
-                        # Own process group, so a kill also takes its children.
-                        start_new_session=True,
-                    )
-                    assert process.stdout is not None and process.stderr is not None
-                    readers = [
-                        create_task(_read_output(process.stdout)),
-                        create_task(_read_output(process.stderr)),
-                    ]
-                    stdout, stderr = await gather(*readers)
-                    await process.wait()
-            except BaseException:
-                if process is not None:
-                    with suppress(ProcessLookupError):
-                        killpg(process.pid, SIGKILL)
-                    for reader in readers:
-                        reader.cancel()
-                    await gather(*readers, return_exceptions=True)
-                    # After killing, only the bounded pipe buffers remain.
-                    await process.communicate()
-                raise
+        # OfficeCLI keeps stdout small and spills large output into TMPDIR.
+        try:
+            async with timeout(_settings.officecli_timeout):
+                stdout, stderr = await process.communicate(stdin)
+        except BaseException:
+            with suppress(ProcessLookupError):
+                killpg(process.pid, SIGKILL)
+            # Drains the pipes, or wait() would hang on a paused reader.
+            await process.communicate()
+            raise
 
     except TimeoutError:
         raise ToolError(
@@ -182,10 +163,6 @@ async def run(
 
     results = data["results"]
 
-    for result in results:
-        if isinstance(result.get("output"), str):
-            result["output"] = _TEMP_NAME.sub("document", result["output"])
-
     if failures := [result for result in results if not result["success"]]:
         raise ToolError(
             "\n".join(
@@ -223,14 +200,16 @@ async def findings(
 
 async def screenshot(
     file: Path,
-    page: int,
+    page: int | None,
 ) -> bytes:
 
     with TemporaryDirectory(prefix="oc-") as temp:
 
         image = Path(temp) / "page.png"
         returncode, stdout, stderr = await _execute(
-            "view", file.name, "screenshot", "--page", str(page),
+            "view", file.name, "screenshot",
+            # Without a page, all slides or pages as one contact sheet.
+            *(("--page", str(page)) if page else ("--grid",)),
             "-o", str(image),
             cwd=file.parent,
             temp=Path(temp),
@@ -238,7 +217,10 @@ async def screenshot(
 
         if returncode:
             detail = (stderr or stdout).strip().removeprefix("Error: ")
-            raise ToolError(f"Could not render page {page}: {detail[-300:]}")
+            raise ToolError(
+                f"Could not render {f'page {page}' if page else 'the overview'}: "
+                f"{detail[-300:]}"
+            )
 
         return await to_thread(image.read_bytes)
 

@@ -8,7 +8,7 @@ from xml.etree import ElementTree
 from fastmcp.exceptions import ToolError
 
 from models.inventory import Sheet, XlsxInventory
-from office import _officecli
+from tools._office import officecli
 
 FORMAT = "xlsx"
 MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -18,15 +18,22 @@ CONTENT_TYPE = (
 )
 INVENTORY = XlsxInventory
 
-ELEMENT_TYPES = {"sheet", "chart", "picture", "comment"}
+ELEMENT_TYPES = {
+    "sheet", "chart", "picture", "comment", "table", "autofilter",
+    "conditionalformatting",
+}
 CONTENT_PROPS = {
     "value", "formula", "style", "name", "ref", "text", "author", "charttype",
     "datarange", "categories", "data", "title", "legend", "datalabels",
     "anchor", "src", "width", "height", "autofit", "startcell", "freeze",
+    "range", "headerrow", "totalrow", "columns", "totalsrowfunction",
+    "operator", "value2", "rank", "percent", "bottom", "aboveaverage",
+    "iconset", "min", "max", "showvalue",
 }
 APPEARANCE_PROPS = {
     "bold", "italic", "underline", "font.color", "font.size", "font.name",
-    "fill", "numfmt", "alignment.horizontal", "border.all",
+    "fill", "numfmt", "alignment.horizontal", "border.all", "color",
+    "mincolor", "maxcolor", "midcolor", "negativecolor",
 }
 PROTECTED_PATHS = ()
 
@@ -50,6 +57,11 @@ their rows. Build with `run_commands`, e.g.:
   "parent": "/", "type": "sheet", "props": {"name": "Q2"}}.
 - fit widths of new columns: {"command": "set", "path": "/Sheet1/col[B]",
   "props": {"autofit": "true"}}; authored widths stay as they are.
+- Excel table: {"command": "add", "parent": "/Sheet1", "type": "table",
+  "props": {"ref": "A1:B3", "name": "Sales", "style": "medium2"}}; filter:
+  type `autofilter`, props `range`; conditional format: type
+  `conditionalformatting`, props `ref`, `operator` "greaterThan", `value`
+  and `fill`, the latter with `design_mode="custom"`.
 Direct formatting (bold, fill, number format, ...) needs
 `design_mode="custom"` and an explicit user request; prefer named styles.
 """.strip()
@@ -81,7 +93,7 @@ async def inventory(
     file: Path,
 ) -> XlsxInventory:
 
-    root, sheets, stylesheet = await _officecli.run(file, [
+    root, sheets, stylesheet = await officecli.run(file, [
         {"command": "get", "path": "/", "depth": 0},
         {"command": "query", "selector": "sheet"},
         {"command": "raw", "part": "/styles"},
@@ -132,7 +144,7 @@ async def inventory(
 
     # Unlike the other inventories, this one writes: missing cell formats.
     if additions:
-        await _officecli.run(file, [
+        await officecli.run(file, [
             *(
                 {
                     "command": "raw-set", "part": "/styles",
@@ -148,24 +160,13 @@ async def inventory(
         ])
 
     return XlsxInventory(
-        theme=_officecli.theme(root),
+        theme=officecli.theme(root),
         sheets=[
             Sheet(name=sheet["path"].removeprefix("/"), rows=sheet["childCount"])
             for sheet in sheets["output"]["results"]
         ],
         styles=styles,
     )
-
-
-def bind(
-    inventory: XlsxInventory,
-    master: int | None,
-) -> XlsxInventory:
-
-    if master is not None:
-        raise ToolError("`master` applies to pptx designs only.")
-
-    return inventory
 
 
 def adapt(
@@ -175,7 +176,8 @@ def adapt(
 
     props = command.get("props", {})
 
-    if "style" not in props:
+    # A table style is the engine's own prop; a named cell style is not.
+    if "style" not in props or command["command"] == "add":
         return command
 
     cells = _CELLS.fullmatch(command.get("path", ""))

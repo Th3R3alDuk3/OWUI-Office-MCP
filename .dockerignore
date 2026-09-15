@@ -3,7 +3,9 @@
 !config.py
 !main.py
 !models/
-!office/
+!tools/
+!bin/officecli
+!bin/landrun
 !services/
 !templates/
 !pyproject.toml

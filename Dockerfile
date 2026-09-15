@@ -1,21 +1,7 @@
-FROM ghcr.io/astral-sh/uv:python3.14-trixie-slim AS build
+FROM ghcr.io/astral-sh/uv:python3.14-trixie-slim
 
-WORKDIR /app/
-
-ENV UV_COMPILE_BYTECODE=1 \
-    UV_LINK_MODE=copy \
-    UV_PYTHON_DOWNLOADS=0
-
-COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --no-install-project
-
-
-FROM python:3.14-slim-trixie
-
-# OfficeCLI renders screenshots through a headless browser it finds as
-# `chromium`. Landlock denies /dev/shm, so shared memory goes to TMPDIR. The
-# fonts are metric-compatible with Arial, Times New Roman, Courier New,
-# Calibri and Cambria, so line breaks match Office.
+# OfficeCLI screenshots need a `chromium`; Landlock denies /dev/shm. The fonts
+# are metric-compatible with Office's, so line breaks match.
 RUN apt-get update \
  && apt-get install --yes --no-install-recommends \
     chromium-headless-shell fonts-liberation fonts-crosextra-carlito \
@@ -25,24 +11,25 @@ RUN apt-get update \
     > /usr/bin/chromium \
  && chmod 755 /usr/bin/chromium
 
-ARG OFFICECLI_VERSION=1.0.149
-ARG OFFICECLI_SHA256=ba0f397351ca3c31109ddc8e9690b848304da77594fd7573a76f2b1eb7e430e7
-
-ADD --checksum=sha256:${OFFICECLI_SHA256} --chmod=755 \
-    https://github.com/iOfficeAI/OfficeCLI/releases/download/v${OFFICECLI_VERSION}/officecli-linux-x64 \
-    /usr/local/bin/officecli
+# Pinned by version and checksum in bin/download.sh.
+COPY --chmod=755 bin/officecli bin/landrun /usr/local/bin/
 
 WORKDIR /app/
 
-COPY --from=build /app/.venv .venv
-COPY . .
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PYTHON_DOWNLOADS=0
+
+COPY pyproject.toml uv.lock ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --no-install-project
+
+# The binaries already sit in /usr/local/bin.
+COPY --exclude=bin . .
 
 ENV PATH="/app/.venv/bin:$PATH"
 
-# Projects and prepared templates live here; mount it to keep them.
-RUN useradd --system --uid 1000 app \
- && mkdir data \
- && chown app data
+RUN useradd --system --uid 1000 app
 USER app
 
 CMD ["python", "main.py"]

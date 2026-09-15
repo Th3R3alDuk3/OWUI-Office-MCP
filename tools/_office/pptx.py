@@ -8,7 +8,7 @@ from zipfile import ZipFile
 from fastmcp.exceptions import ToolError
 
 from models.inventory import Layout, Master, PptxInventory
-from office import _officecli
+from tools._office import officecli
 
 FORMAT = "pptx"
 MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
@@ -20,15 +20,17 @@ INVENTORY = PptxInventory
 
 ELEMENT_TYPES = {
     "slide", "placeholder", "paragraph", "notes", "comment", "chart", "picture",
+    "table", "textbox",
 }
 CONTENT_PROPS = {
     "layout", "hidden", "phtype", "idx", "text", "level", "image", "author",
     "initials", "charttype", "categories", "data", "title", "legend",
-    "datalabels", "src", "x", "y", "width", "height",
+    "datalabels", "src", "x", "y", "width", "height", "rows", "cols",
+    "colwidths", "rowheight", "style", "firstrow", "bandedrows", "autofit",
 }
 APPEARANCE_PROPS = {
     "bold", "italic", "underline", "color", "size", "font", "fill", "align",
-    "background", "colors",
+    "background", "colors", "headerfill", "bodyfill", "border.all",
 }
 PROTECTED_PATHS = ("/slidemaster", "/slidelayout", "/theme")
 
@@ -53,6 +55,9 @@ and slots are accepted. Build with `run_commands`, e.g.:
   placeholder's geometry can be read with `get` after adding it. A picture
   with only `width` keeps its aspect ratio; `width`
   and `height` together stretch it.
+- table: type `table`, props `data` "H1,H2;r1c1,r1c2", `x`, `y`, `width`
+  and `style` (medium2 follows the theme); free text outside the slots:
+  type `textbox`, props `text`, `x`, `y`, `width`, `height`.
 Colors, fonts and other appearance props need `design_mode="custom"` and an
 explicit user request. Paths are 1-based, `index` in add/move is 0-based.
 Sample slides of a template are not part of its masters.
@@ -70,12 +75,12 @@ async def prepare(
     file: Path,
 ) -> None:
 
-    (slides,) = await _officecli.run(file, [
+    (slides,) = await officecli.run(file, [
         {"command": "query", "selector": "slide"},
     ])
 
     if paths := [slide["path"] for slide in slides["output"]["results"]]:
-        await _officecli.run(file, [
+        await officecli.run(file, [
             {"command": "remove", "path": path} for path in reversed(paths)
         ])
 
@@ -168,7 +173,7 @@ async def inventory(
     file: Path,
 ) -> PptxInventory:
 
-    (root,) = await _officecli.run(file, [
+    (root,) = await officecli.run(file, [
         {"command": "get", "path": "/", "depth": 0},
     ])
     masters, _, _ = await to_thread(_design, file)
@@ -176,7 +181,7 @@ async def inventory(
     properties = root["output"]["results"][0]["format"]
 
     return PptxInventory(
-        theme=_officecli.theme(root),
+        theme=officecli.theme(root),
         slide_size=f"{properties['slideWidth']} x {properties['slideHeight']}",
         masters=masters,
     )

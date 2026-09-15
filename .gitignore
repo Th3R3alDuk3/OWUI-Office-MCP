@@ -1,12 +1,14 @@
 # Local settings and runtime data
 .env
-data/
 
 # Python
 .venv/
 __pycache__/
 .ruff_cache/
 
+tests/
 BACKLOG.md
 CODESTYLE.md
 ARCHITECTURE.md
+
+.claude/

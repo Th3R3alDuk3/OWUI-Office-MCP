@@ -618,18 +618,18 @@ source = { virtual = "." }
 dependencies = [
     { name = "fastmcp" },
     { name = "httpx2" },
-    { name = "py-landlock" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "valkey" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "fastmcp", specifier = ">=4.0.3" },
     { name = "httpx2", specifier = ">=2.12.0" },
-    { name = "py-landlock", specifier = ">=0.1.1" },
     { name = "pydantic", specifier = ">=2.13.5" },
     { name = "pydantic-settings", specifier = ">=2.15.0" },
+    { name = "valkey", specifier = ">=6.1.1" },
 ]
 
 [[package]]
@@ -682,15 +682,6 @@ keyring = [
 ]
 memory = [
     { name = "cachetools" },
-]
-
-[[package]]
-name = "py-landlock"
-version = "0.1.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/83/aa/6dc19aa2393cf4d2288fe3647ade6308d66c2deb233e40e592ddce7c6330/py_landlock-0.1.1.tar.gz", hash = "sha256:917e83917ea8932c1f106b62e82874542094738143600b77dbccd88deabc5656", size = 16210, upload-time = "2026-01-11T15:10:16.372Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/25/f5/53515e4b743ee4d07e37aedfb4bc30c2185b48bd96df44a9fbbef3f3c610/py_landlock-0.1.1-py3-none-any.whl", hash = "sha256:a4dd8dad2032edeb6974031d10be8758acf6c9747ab18616921a03779d97e404", size = 16602, upload-time = "2026-01-11T15:10:17.056Z" },
 ]
 
 [[package]]
@@ -1068,6 +1059,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/f2/0f/3f86e61397dd33bf2ccf28188c40db6a740658aeebbbf6e7dbc101a1f487/uvicorn-0.52.4.tar.gz", hash = "sha256:73acfee47a0b133c5de13d219492d62d8a31e935f4fe6e41a232451a15379f86", size = 100627, upload-time = "2026-08-19T06:27:41.821Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f1/79/4a20b54ab0491485ccd8c077db2d39187c7f12b3e15485d38a7be37c81b4/uvicorn-0.52.4-py3-none-any.whl", hash = "sha256:f86e41a149d7d05a9969337e3946a9c171c06a5d42680896daaba624aeac8da1", size = 79871, upload-time = "2026-08-19T06:27:40.36Z" },
+]
+
+[[package]]
+name = "valkey"
+version = "6.1.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/c3/ee/7fd930fc712275084722ddd464a0ea296abdb997d2da396320507968daeb/valkey-6.1.1.tar.gz", hash = "sha256:5880792990c6c2b5eb604a5ed5f98f300880b6dd92d123819b66ed54bb259731", size = 4601372, upload-time = "2025-08-11T06:41:10.63Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d0/a2/252afa4da08c714460f49e943070f86a02931f99f886182765194002fe33/valkey-6.1.1-py3-none-any.whl", hash = "sha256:e2691541c6e1503b53c714ad9a35551ac9b7c0bbac93865f063dbc859a46de92", size = 259474, upload-time = "2025-08-11T06:41:08.769Z" },
 ]
 
 [[package]]

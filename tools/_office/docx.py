@@ -4,7 +4,7 @@ from xml.etree import ElementTree
 from fastmcp.exceptions import ToolError
 
 from models.inventory import DocxInventory, DocxStyles
-from office import _officecli
+from tools._office import officecli
 
 FORMAT = "docx"
 MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -14,10 +14,14 @@ CONTENT_TYPE = (
 )
 INVENTORY = DocxInventory
 
-ELEMENT_TYPES = {"paragraph", "table", "pagebreak", "chart", "picture", "comment"}
+ELEMENT_TYPES = {
+    "paragraph", "table", "pagebreak", "chart", "picture", "comment",
+    "hyperlink", "toc",
+}
 CONTENT_PROPS = {
     "text", "style", "data", "charttype", "categories", "title", "legend",
-    "datalabels", "src", "width", "height", "author", "initials",
+    "datalabels", "src", "width", "height", "author", "initials", "url",
+    "anchor", "tooltip", "levels", "hyperlinks", "pagenumbers",
 }
 APPEARANCE_PROPS = {
     "bold", "italic", "underline", "color", "size", "font", "highlight",
@@ -38,6 +42,9 @@ Build with `run_commands`, using style IDs from `inventory.styles`, e.g.:
 - image: type `picture`, props `src` "file:<file_id>" and `width` "12cm".
 - review comment: {"command": "add", "parent": "/body/p[2]",
   "type": "comment", "props": {"text": "...", "author": "..."}}
+- link inside a paragraph: parent "/body/p[2]", type `hyperlink`, props
+  `url` and `text`; table of contents: parent "/body", type `toc`, props
+  `levels` "1-3".
 Colors, fonts and other appearance props need `design_mode="custom"` and an
 explicit user request. Without `index`, `after` or `before`, blocks are
 appended. Paths are 1-based, `index` is 0-based.
@@ -48,7 +55,7 @@ async def prepare(
     file: Path,
 ) -> None:
 
-    (document,) = await _officecli.run(file, [
+    (document,) = await officecli.run(file, [
         {"command": "raw", "part": "/document"},
     ])
 
@@ -83,14 +90,14 @@ async def prepare(
         })
 
     if commands:
-        await _officecli.run(file, commands)
+        await officecli.run(file, commands)
 
 
 async def inventory(
     file: Path,
 ) -> DocxInventory:
 
-    root, styles = await _officecli.run(file, [
+    root, styles = await officecli.run(file, [
         {"command": "get", "path": "/", "depth": 0},
         {"command": "query", "selector": "style"},
     ])
@@ -117,20 +124,9 @@ async def inventory(
                 groups.builtin_table.append(properties["id"])
 
     return DocxInventory(
-        theme=_officecli.theme(root),
+        theme=officecli.theme(root),
         styles=groups,
     )
-
-
-def bind(
-    inventory: DocxInventory,
-    master: int | None,
-) -> DocxInventory:
-
-    if master is not None:
-        raise ToolError("`master` applies to pptx designs only.")
-
-    return inventory
 
 
 def adapt(

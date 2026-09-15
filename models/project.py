@@ -1,11 +1,82 @@
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints
 
 from models.inventory import DocxInventory, PptxInventory, XlsxInventory
 
 Format = Literal["pptx", "docx", "xlsx"]
 DesignMode = Literal["template", "custom"]
+# OfficeCLI treats element types and prop names case-insensitively.
+Lowercase = Annotated[str, StringConstraints(to_lower=True)]
+
+
+class Command(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    command: Literal[
+        "add", "set", "remove", "move", "swap", "import",
+        "get", "query", "view", "validate",
+    ]
+    path: str | None = Field(
+        default=None,
+        description="Target of set, remove, move, get.",
+    )
+    parent: str | None = Field(
+        default=None,
+        description="Parent that add or import writes into.",
+    )
+    type: Lowercase | None = Field(
+        default=None,
+        description="Element type that add creates.",
+    )
+    from_: str | None = Field(
+        default=None,
+        alias="from",
+        description="Existing element that add copies.",
+    )
+    index: int | None = Field(
+        default=None,
+        ge=0,
+        description="0-based position for add and move.",
+    )
+    after: str | None = Field(
+        default=None,
+        description="Add or move after this element.",
+    )
+    before: str | None = Field(
+        default=None,
+        description="Add or move before this element.",
+    )
+    to: str | None = Field(
+        default=None,
+        description="Target parent of a move.",
+    )
+    path2: str | None = Field(
+        default=None,
+        description="Second element of a swap.",
+    )
+    props: dict[Lowercase, str | int | float | bool] | None = Field(
+        default=None,
+        description="Property name -> value.",
+    )
+    selector: str | None = Field(
+        default=None,
+        description="Filter of a query, e.g. `slide`.",
+    )
+    text: str | None = Field(
+        default=None,
+        description="Inline CSV of an import.",
+    )
+    mode: Literal["text", "annotated", "outline", "stats", "issues"] | None = Field(
+        default=None,
+        description="Mode of a view; `text` when omitted.",
+    )
+    depth: int | None = Field(
+        default=None,
+        ge=0,
+        le=4,
+        description="Child levels that get returns.",
+    )
 
 
 class Template(BaseModel):
@@ -15,13 +86,11 @@ class Template(BaseModel):
     format: Format = Field(
         description="Document format the template produces.",
     )
-
-
-class PptxTemplate(Template):
-    masters: dict[int, str] = Field(
+    masters: dict[int, str] | None = Field(
+        default=None,
         description=(
-            "Slide master index -> name; pass the index as `master` to "
-            "`create_project`."
+            "PPTX only: slide master index -> name; pass the index as "
+            "`master` to `create_project`."
         ),
     )
 
@@ -35,7 +104,7 @@ class ToolResult(BaseModel):
 
 
 class TemplatesResult(ToolResult):
-    templates: list[PptxTemplate | Template] = Field(
+    templates: list[Template] = Field(
         description="Stored templates.",
     )
 

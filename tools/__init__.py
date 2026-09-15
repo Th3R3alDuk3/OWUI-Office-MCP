@@ -1,4 +1,4 @@
-from office._tools import (
+from tools.office import (
     create_project,
     export_project,
     get_reference,
@@ -14,8 +14,8 @@ TOOLS = (
     list_templates,
     create_project,
     open_project,
-    run_commands,
     get_reference,
+    run_commands,
     preview_project,
     export_project,
 )

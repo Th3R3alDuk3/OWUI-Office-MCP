@@ -8,7 +8,7 @@ requires-python = ">=3.14"
 dependencies = [
     "fastmcp>=4.0.3",
     "httpx2>=2.12.0",
-    "py-landlock>=0.1.1",
     "pydantic>=2.13.5",
     "pydantic-settings>=2.15.0",
+    "valkey>=6.1.1",
 ]

@@ -4,36 +4,21 @@ from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.middleware.rate_limiting import RateLimitingMiddleware
 
 from config import get_settings
-from office import TOOLS, office_lifespan
+from tools import TOOLS, office_lifespan
 
 settings = get_settings()
 
 INSTRUCTIONS = """
 OWUI-Office-MCP creates and edits PowerPoint, Word and Excel files with
-OfficeCLI commands.
+OfficeCLI commands, faithful to a design: a stored template or a file the
+user attached.
 
-A user may hold several projects; each tool result names the `project_id`.
-A project is started one of two ways:
-- `create_project` starts a new, empty document from a design: a stored
-  template from `list_templates` (the default when the user attached
-  nothing), or a file the user attached as the design, e.g. their own slide
-  master — PPTX/DOCX example content is cleared while template structure is
-  retained. XLSX keeps sheets, existing values, formulas and formatting.
-- `open_project` edits a file the user attached, as it is; use it to keep
-  sample slides, cover pages or other existing content.
-A `file_id` is an attached OpenWebUI file — never a template name from
-`list_templates`, and never invented.
-
-Workflow: start a project, build or edit it with `run_commands` — one batch
-of OfficeCLI commands per edit step, applied atomically — check the result
-visually with `preview_project`, then call `export_project` once the user's
-request is fully applied, not after every individual change. The project
-stays editable: apply a later request to the same project and export it
-again. Stay within the design: its layouts, styles, theme colors and
-fonts. Only when the user explicitly asks for other colors, fonts or
-formatting, pass `design_mode="custom"`. `get_reference` documents elements
-and props. Every tool result includes a `hint` field with the suggested
-next step — follow it unless the user's request says otherwise.
+Workflow: `list_templates` unless the user attached a design, then
+`create_project` or `open_project`, then `run_commands` with one atomic
+batch per edit step, `preview_project` to check the result, and
+`export_project` once the user's request is fully applied. Every result
+carries a `hint` with the next step; follow it unless the user's request
+says otherwise.
 """.strip()
 
 mcp = FastMCP(

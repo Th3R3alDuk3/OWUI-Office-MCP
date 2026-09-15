@@ -5,9 +5,8 @@ from types import ModuleType
 
 from fastmcp.exceptions import ToolError
 
-from models.guard import Command
 from models.inventory import Inventory
-from models.project import DesignMode
+from models.project import Command, DesignMode
 
 READ_COMMANDS = {"get", "query", "view", "validate"}
 

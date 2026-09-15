@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     owui_public_url: str | None = None
     owui_verify_tls: bool
 
+    valkey_url: str
+
     max_concurrent_requests: PositiveInt
     max_concurrent_requests_per_user: PositiveInt
 
@@ -25,21 +27,16 @@ class Settings(BaseSettings):
     rate_limit_burst: PositiveInt
 
     officecli_max_processes: PositiveInt
+    # MB; managed heap of one OfficeCLI run
+    officecli_max_memory: PositiveInt
     # seconds; one OfficeCLI run
     officecli_timeout: PositiveFloat
-    # seconds; waiting for the project and an OfficeCLI process
+    # seconds; waiting for the project lock and an OfficeCLI process
     officecli_queue_timeout: PositiveFloat
-
-    # MB
-    data_max_size: PositiveInt
-    # MB
-    data_max_size_per_user: PositiveInt
 
     project_max_per_user: PositiveInt
     # seconds; idle time until a project expires
     project_ttl: PositiveInt
-    # seconds
-    project_sweep_interval: PositiveInt
 
 
 @cache
