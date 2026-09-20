@@ -20,17 +20,17 @@ START_HINT = """
 Bound to the master in `inventory.masters`: use its layouts and slots only.
 Build in steps: a few slides per batch, then `view outline` or
 `preview_project`, then continue. Engine rules: a slide takes `layout` = the
-layout's `index` (or name); fill a slot with `add` type `placeholder`, `phType`
-and, when the slot names one, `idx` (`slots` are `phType:idx`, use them
-exactly as listed); change an existing placeholder with `set` on its path
-from `query placeholder`. `\n`
-in `text` starts a new paragraph. Charts take `chartType`, `categories`
-"Q1,Q2" and `data` "Revenue:1,2;Costs:3,4"; tables `data` "H1,H2;r1c1,r1c2";
-images come from attached files as `image` (placeholder) or `src` (picture)
-"file:<file_id>"; free elements are placed by `x`, `y`, `width`, `height`
-within `inventory.slide_size`. Paths are 1-based, `index` in add/move is
-0-based. Stay within the design: change colors, fonts and other appearance
-only when the user asks. `get_reference` documents elements and props.
+layout's `index` (or name); fill a slot with `add` type `placeholder`,
+`phType` and, when the slot names one, `idx` (`slots` are `phType:idx`, use
+them exactly as listed); change an existing placeholder with `set` on its
+path from `query placeholder`. `\n` in `text` starts a new paragraph. Charts
+take `chartType`, `categories` "Q1,Q2" and `data` "Revenue:1,2;Costs:3,4";
+tables `data` "H1,H2;r1c1,r1c2"; images come from attached files as `image`
+(placeholder) or `src` (picture) "file:<file_id>"; free elements are placed
+by `x`, `y`, `width`, `height` within `inventory.slide_size`. Paths are
+1-based, `index` in add/move is 0-based. Stay within the design: change
+colors, fonts and other appearance only when the user asks. `get_reference`
+documents elements and props.
 """.strip()
 
 # Slots the master fills itself.

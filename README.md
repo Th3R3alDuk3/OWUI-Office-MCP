@@ -125,6 +125,7 @@ Running needs no network beyond OpenWebUI and Valkey.
   own errors, `get_reference` documents elements and props. Images come from
   attached files as `file:<file_id>`. Excel named styles go through a `style`
   prop that the server resolves to the workbook's cell format.
+
 Every result carries a `hint` with the next step. A project expires after
 `PROJECT_TTL` seconds without access; the exported file lives on in OpenWebUI.
 
@@ -159,11 +160,11 @@ user, OfficeCLI processes, memory and timeouts, and the project TTL.
   anything unexpected is masked.
 - **Known limits:** admission counters and rate limits are per server process,
   so approximate with several replicas; there is no per-user quota, Valkey's
-  memory limit bounds all drafts together. Each
-  OfficeCLI call costs about a second of startup. The container runs non-root
-  with a read-only root filesystem and a 4 GB memory limit for Python,
-  OfficeCLI runs and Chromium together; scale it with
-  `OFFICECLI_MAX_PROCESSES` and `MAX_CONCURRENT_REQUESTS`.
+  memory limit bounds all drafts together. Each OfficeCLI call costs about a
+  second of startup. The container runs non-root with a read-only root
+  filesystem and a 4 GB memory limit for Python, OfficeCLI runs and Chromium
+  together; scale it with `OFFICECLI_MAX_PROCESSES` and
+  `MAX_CONCURRENT_REQUESTS`.
 
 Several replicas can share one Valkey. On Kubernetes that is a Deployment
 without a volume; the nodes need Linux 6.7 or newer and a container runtime

@@ -84,7 +84,7 @@ async def _admitted(
     name="list_templates",
     description=(
         "List the stored templates with their format and, for PPTX, their "
-        "slide masters. Use this when the user did NOT attach a file, then "
+        "slide masters. Use this when the user did not attach a file, then "
         "pick one for `start_project`."
     ),
     annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
