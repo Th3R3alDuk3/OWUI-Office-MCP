@@ -6,7 +6,6 @@
 __pycache__/
 .ruff_cache/
 
-tests/
 BACKLOG.md
 CODESTYLE.md
 ARCHITECTURE.md

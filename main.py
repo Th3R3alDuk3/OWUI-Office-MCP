@@ -4,22 +4,15 @@ from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.middleware.rate_limiting import RateLimitingMiddleware
 
 from config import get_settings
-from tools import TOOLS, office_lifespan
+from services.project import project_lifespan
+from tools import TOOLS
 
 settings = get_settings()
 
-INSTRUCTIONS = """
-OWUI-Office-MCP creates and edits PowerPoint, Word and Excel files with
-OfficeCLI commands, faithful to a design: a stored template or a file the
-user attached.
-
-Workflow: `list_templates` unless the user attached a design, then
-`create_project` or `open_project`, then `run_commands` with one atomic
-batch per edit step, `preview_project` to check the result, and
-`export_project` once the user's request is fully applied. Every result
-carries a `hint` with the next step; follow it unless the user's request
-says otherwise.
-""".strip()
+INSTRUCTIONS = (
+    "Creates and edits PowerPoint, Word and Excel files from a stored template "
+    "or an attached file, faithful to its design."
+)
 
 mcp = FastMCP(
     name="OWUI-Office-MCP",
@@ -28,7 +21,6 @@ mcp = FastMCP(
         public_key=settings.jwt_secret,
         algorithm=settings.jwt_algorithm,
     ),
-    lifespan=office_lifespan,
     middleware=[
         RateLimitingMiddleware(
             max_requests_per_second=settings.rate_limit_rps,
@@ -40,6 +32,7 @@ mcp = FastMCP(
             ),
         ),
     ],
+    lifespan=project_lifespan,
     tools=TOOLS,
     mask_error_details=True,
 )

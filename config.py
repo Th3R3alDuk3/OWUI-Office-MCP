@@ -34,7 +34,6 @@ class Settings(BaseSettings):
     # seconds; waiting for the project lock and an OfficeCLI process
     officecli_queue_timeout: PositiveFloat
 
-    project_max_per_user: PositiveInt
     # seconds; idle time until a project expires
     project_ttl: PositiveInt
 

@@ -14,10 +14,9 @@ from fastmcp.utilities.logging import get_logger
 from pydantic import JsonValue
 
 from config import get_settings
-from models.inventory import Theme
 
 _settings = get_settings()
-_logger = get_logger("office")
+logger = get_logger(__name__)
 
 # Both fetched by bin/download.sh, pinned by version and checksum there.
 _LANDRUN = "/usr/local/bin/landrun"
@@ -40,9 +39,7 @@ _ENVIRONMENT = {
 
 _MAX_SPILL_BYTES = 64 * 2**20
 
-# The rest of a reference documents OfficeCLI's own sources.
-_REFERENCE_KEYS = {"element", "parent", "operations", "paths", "children"}
-_PROPERTY_KEYS = {"type", "values", "description", "examples", "add", "set"}
+READ_COMMANDS = {"get", "query", "view", "validate", "raw"}
 
 _semaphore = Semaphore(_settings.officecli_max_processes)
 
@@ -87,7 +84,6 @@ async def _execute(
             start_new_session=True,
         )
 
-        # OfficeCLI keeps stdout small and spills large output into TMPDIR.
         try:
             async with timeout(_settings.officecli_timeout):
                 stdout, stderr = await process.communicate(stdin)
@@ -105,9 +101,8 @@ async def _execute(
 
     finally:
         _semaphore.release()
-        _logger.info(
-            "officecli %s: %.2f s", arguments[0], perf_counter() - started,
-        )
+        logger.info("officecli %s: %.2f s",
+            arguments[0], perf_counter() - started)
 
     return (
         process.returncode,
@@ -116,7 +111,7 @@ async def _execute(
     )
 
 
-async def run(
+async def run_batch(
     file: Path,
     commands: list[dict],
 ) -> list[dict]:
@@ -124,7 +119,8 @@ async def run(
     with TemporaryDirectory(prefix="oc-") as temp:
 
         _, stdout, stderr = await _execute(
-            "batch", file.name, "--input", "-", "--json",
+            # The first failure is the real one; the rest would be its fallout.
+            "batch", file.name, "--input", "-", "--json", "--stop-on-error",
             # Relative sources resolve inside the project.
             cwd=file.parent,
             temp=Path(temp),
@@ -170,32 +166,11 @@ async def run(
                 f"({failure.get('code', 'error')}): {failure['error']}"
                 for failure in failures
             )
-            + "\nThe batch was rolled back, nothing changed. Fix it and "
-            "send the whole batch again."
+            + "\nThe batch stopped there and was rolled back, nothing changed. "
+            "Fix it and send the whole batch again."
         )
 
     return results
-
-
-async def findings(
-    file: Path,
-) -> list[str]:
-
-    validation, issues = await run(file, [
-        {"command": "validate"},
-        {"command": "view", "mode": "issues"},
-    ])
-
-    # Batch validation is text: a headline, then one indented block per error.
-    errors = validation["output"].split("\n  [")[1:]
-
-    return [
-        *(" ".join(f"[{error}".split()) for error in errors),
-        *(
-            f"{issue['path']}: {issue['message']}"
-            for issue in issues["output"]["issues"]
-        ),
-    ]
 
 
 async def screenshot(
@@ -225,10 +200,9 @@ async def screenshot(
         return await to_thread(image.read_bytes)
 
 
-async def help(
+async def lookup_reference(
     format: str,
     topic: str,
-    props: set[str],
 ) -> JsonValue:
 
     with TemporaryDirectory(prefix="oc-") as temp:
@@ -240,52 +214,13 @@ async def help(
 
     if returncode:
         detail = (stderr or stdout).strip()
-        # The JSON error envelope may suggest a topic ("Did you mean: chart?").
+        # The error envelope may suggest a topic ("Did you mean: chart?").
         with suppress(ValueError, KeyError, TypeError):
             detail = loads(detail)["error"]["error"]
-        raise ToolError(
-            f"No reference for '{topic}'. {detail.partition('\nUse:')[0]}"
-        )
+        raise ToolError(f"No reference for '{topic}'. {detail}")
 
     try:
-        reference = loads(stdout)
+        return loads(stdout)
     except JSONDecodeError:
         # Verb overviews are plain text.
         return stdout.strip()
-
-    properties: dict[str, JsonValue] = {}
-
-    for name, prop in reference.get("properties", {}).items():
-
-        # Listed under the name `props` accepts, which may be an alias.
-        if accepted := [
-            alias for alias in (name, *prop.get("aliases", []))
-            if alias.lower() in props
-        ]:
-            properties.setdefault(accepted[0], {
-                key: value for key, value in prop.items() if key in _PROPERTY_KEYS
-            })
-
-    return {
-        **{key: value for key, value in reference.items() if key in _REFERENCE_KEYS},
-        "properties": properties,
-    }
-
-
-def theme(
-    root: dict,
-) -> Theme:
-
-    properties = root["output"]["results"][0]["format"]
-
-    return Theme(
-        colors={
-            key.removeprefix("theme.color."): value
-            for key, value in properties.items()
-            if key.startswith("theme.color.")
-        },
-        fonts=list(dict.fromkeys(
-            font for key in ("theme.font.major.latin", "theme.font.minor.latin")
-            if (font := properties.get(key))
-        )),
-    )

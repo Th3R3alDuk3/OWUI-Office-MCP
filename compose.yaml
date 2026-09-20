@@ -3,8 +3,9 @@ name: owui-office-mcp
 services:
 
   server:
-    build: .
-    image: ghcr.io/th3r3alduk3/owui-office-mcp
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.app
     container_name: owui-office-mcp
     restart: unless-stopped
     ports:
@@ -26,7 +27,7 @@ services:
     command: valkey-server --maxmemory 1gb --maxmemory-policy volatile-lru --save ""
 
   valkey-admin:
-    image: valkey/valkey-admin:1.1.0
+    image: valkey/valkey-admin:1.1.1
     restart: unless-stopped
     # No login, so localhost only.
     ports:

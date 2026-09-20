@@ -17,8 +17,7 @@ COPY --chmod=755 bin/officecli bin/landrun /usr/local/bin/
 WORKDIR /app/
 
 ENV UV_COMPILE_BYTECODE=1 \
-    UV_LINK_MODE=copy \
-    UV_PYTHON_DOWNLOADS=0
+    UV_LINK_MODE=copy
 
 COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \

@@ -1,4 +1,4 @@
-name: Docker
+name: App image
 
 # Build on every push to main (latest) and dev (dev) and on version tags;
 # validate (build only) on PRs.
@@ -56,6 +56,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
+          file: docker/Dockerfile.app
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

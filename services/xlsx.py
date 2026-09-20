@@ -7,63 +7,23 @@ from xml.etree import ElementTree
 
 from fastmcp.exceptions import ToolError
 
-from models.inventory import Sheet, XlsxInventory
-from tools._office import officecli
+from models.office import Sheet, XlsxInventory
+from services.officecli import run_batch
 
 FORMAT = "xlsx"
 MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-CONTENT_TYPE = (
-    "application/vnd.openxmlformats-officedocument.spreadsheetml."
-    "sheet.main+xml"
-)
 INVENTORY = XlsxInventory
 
-ELEMENT_TYPES = {
-    "sheet", "chart", "picture", "comment", "table", "autofilter",
-    "conditionalformatting",
-}
-CONTENT_PROPS = {
-    "value", "formula", "style", "name", "ref", "text", "author", "charttype",
-    "datarange", "categories", "data", "title", "legend", "datalabels",
-    "anchor", "src", "width", "height", "autofit", "startcell", "freeze",
-    "range", "headerrow", "totalrow", "columns", "totalsrowfunction",
-    "operator", "value2", "rank", "percent", "bottom", "aboveaverage",
-    "iconset", "min", "max", "showvalue",
-}
-APPEARANCE_PROPS = {
-    "bold", "italic", "underline", "font.color", "font.size", "font.name",
-    "fill", "numfmt", "alignment.horizontal", "border.all", "color",
-    "mincolor", "maxcolor", "midcolor", "negativecolor",
-}
-PROTECTED_PATHS = ()
 
 START_HINT = """
-The design's sheets, values and formulas are kept; `inventory.sheets` counts
-their rows. Build with `run_commands`, e.g.:
-- block of values: {"command": "import", "parent": "/Sheet1",
-  "text": "Region,Revenue\\nNorth,1.2\\nSouth,0.9",
-  "props": {"startCell": "A1"}} — CSV; numbers stay numeric, `=...` is a
-  formula.
-- one cell: {"command": "set", "path": "/Sheet1/B4",
-  "props": {"formula": "SUM(B2:B3)"}} (or `value`).
-- named style from `inventory.styles`, alone in its own `set` and after the
-  cells hold values: {"command": "set", "path": "/Sheet1/A1:B1",
-  "props": {"style": "Header"}}
-- chart: {"command": "add", "parent": "/Sheet1", "type": "chart",
-  "props": {"chartType": "bar", "dataRange": "A1:B3", "anchor": "D2:J18"}}
-  — linked to the cells.
-- image: type `picture`, props `src` "file:<file_id>"; cell note: type
-  `comment`, props `ref` "B2" and `text`; sheet: {"command": "add",
-  "parent": "/", "type": "sheet", "props": {"name": "Q2"}}.
-- fit widths of new columns: {"command": "set", "path": "/Sheet1/col[B]",
-  "props": {"autofit": "true"}}; authored widths stay as they are.
-- Excel table: {"command": "add", "parent": "/Sheet1", "type": "table",
-  "props": {"ref": "A1:B3", "name": "Sales", "style": "medium2"}}; filter:
-  type `autofilter`, props `range`; conditional format: type
-  `conditionalformatting`, props `ref`, `operator` "greaterThan", `value`
-  and `fill`, the latter with `design_mode="custom"`.
-Direct formatting (bold, fill, number format, ...) needs
-`design_mode="custom"` and an explicit user request; prefer named styles.
+Sheets, values and formulas of the design are kept; `inventory.sheets`
+counts their rows. Build in steps and read back with `view`. `import` with
+`text` (CSV) and `startCell` fills a block, `set` with `value` or `formula`
+one cell. A named style from `inventory.styles` goes alone into its own
+`set` on a cell or range, after the cells hold values; prefer it over direct
+formatting. Charts take `chartType`, `dataRange` "A1:B3" and `anchor`
+"D2:J18"; images `src` "file:<file_id>" from attached files. `get_reference`
+documents elements and props.
 """.strip()
 
 _NAMESPACE = {"x": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
@@ -73,7 +33,6 @@ _CELLS = re.compile(
     r"(?::(?P<last_column>[A-Z]{1,3})(?P<last_row>[1-9][0-9]*))?",
     re.IGNORECASE,
 )
-# Column names in order: A … Z, AA … ZZ, AAA … ZZZ.
 _COLUMNS = [
     "".join(letters)
     for size in (1, 2, 3)
@@ -93,8 +52,7 @@ async def inventory(
     file: Path,
 ) -> XlsxInventory:
 
-    root, sheets, stylesheet = await officecli.run(file, [
-        {"command": "get", "path": "/", "depth": 0},
+    sheets, stylesheet = await run_batch(file, [
         {"command": "query", "selector": "sheet"},
         {"command": "raw", "part": "/styles"},
     ])
@@ -103,7 +61,7 @@ async def inventory(
     style_formats = stylesheet.findall("x:cellStyleXfs/x:xf", _NAMESPACE)
     cell_formats = stylesheet.findall("x:cellXfs/x:xf", _NAMESPACE)
 
-    # Partial ID matches can reuse direct alignment or protection overrides.
+    # Whole XML, not xfId: formats may add alignment or protection overrides.
     known: dict[str, int] = {}
 
     for index, cell_format in enumerate(cell_formats):
@@ -144,7 +102,7 @@ async def inventory(
 
     # Unlike the other inventories, this one writes: missing cell formats.
     if additions:
-        await officecli.run(file, [
+        await run_batch(file, [
             *(
                 {
                     "command": "raw-set", "part": "/styles",
@@ -160,7 +118,6 @@ async def inventory(
         ])
 
     return XlsxInventory(
-        theme=officecli.theme(root),
         sheets=[
             Sheet(name=sheet["path"].removeprefix("/"), rows=sheet["childCount"])
             for sheet in sheets["output"]["results"]
@@ -169,7 +126,7 @@ async def inventory(
     )
 
 
-def adapt(
+def resolve_style(
     command: dict,
     inventory: XlsxInventory,
 ) -> dict:
