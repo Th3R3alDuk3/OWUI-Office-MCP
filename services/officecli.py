@@ -18,7 +18,7 @@ from config import get_settings
 _settings = get_settings()
 logger = get_logger(__name__)
 
-# Both fetched by bin/download.sh, pinned by version and checksum there.
+# Pinned in bin/download.sh.
 _LANDRUN = "/usr/local/bin/landrun"
 _OFFICECLI = "/usr/local/bin/officecli"
 

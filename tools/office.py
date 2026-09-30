@@ -3,7 +3,6 @@ from collections import Counter
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from functools import partial
-from json import dumps
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -14,7 +13,7 @@ from fastmcp.tools import ToolResult, tool
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import File, Image
 from mcp.types import TextContent, ToolAnnotations
-from pydantic import Field, JsonValue
+from pydantic import Field
 
 from config import get_settings
 from models.office import (
@@ -28,12 +27,12 @@ from models.office import (
     Template,
     TemplatesResult,
 )
+from services import pptx
 from services.officecli import lookup_reference, screenshot
 from services.owui import upload_file
 from services.project import (
     add_asset,
     apply_batch,
-    bind_master,
     fetch_upload,
     load_project,
     lock_project,
@@ -44,9 +43,6 @@ from tools._guard import check_commands
 
 _settings = get_settings()
 logger = get_logger(__name__)
-
-# Per call, over all results of the batch.
-_MAX_OUTPUT_CHARS = 50_000
 
 _active: Counter[str] = Counter()
 
@@ -123,14 +119,13 @@ async def list_templates() -> TemplatesResult:
 @tool(
     name="start_project",
     description=(
-        "Start a project from a design: a stored template (`template_name` "
-        "from `list_templates`) or a file the user attached (`file_id`); pass "
-        "exactly one. An attached file serves as the design only and its "
-        "slides or body text are dropped, unless `keep_content` is true, which "
-        "edits it as it is; the attachment itself never changes. A PPTX project "
-        "is bound to one slide master: if the design has several, pass the one "
-        "the user named as `master`; without it the call lists them. The result "
-        "carries the `project_id` and an inventory of what the design offers."
+        "Start a project from a design: a stored template (`template_name`) or "
+        "an attached file (`file_id`), exactly one. Of an attached file only the "
+        "design is used and its slides or body text are dropped, unless "
+        "`keep_content` is true; the attachment itself never changes. A PPTX "
+        "project is bound to one slide master: with several, pass `master`; "
+        "without it the call lists them. Returns the `project_id` and the "
+        "design's inventory."
     ),
     annotations=ToolAnnotations(destructive_hint=False, open_world_hint=True),
 )
@@ -204,7 +199,13 @@ async def start_project(
                 case _:
                     raise ToolError("Pass either `template_name` or `file_id`.")
 
-            inventory = await bind_master(document, inventory, master)
+            if isinstance(inventory, PptxInventory):
+                inventory = pptx.bind(inventory, master)
+                # Existing slides must belong to the bound master.
+                await pptx.check(document, inventory)
+            elif master is not None:
+                raise ToolError("`master` applies to pptx designs only.")
+
             project_id = await publish_project(user_id, document, inventory)
 
     return StartResult(
@@ -258,14 +259,13 @@ async def get_reference(
 @tool(
     name="run_commands",
     description=(
-        "Apply one batch of OfficeCLI commands to a project, atomically: if a "
-        "command fails, nothing is applied. Each command names its verb in "
-        "`command` and passes its arguments as sibling fields. Reads (get, "
-        "query, view, validate) return their output in `results`. Images come "
-        "from attached files as `file:<file_id>`. Any OfficeCLI batch command "
-        "works except file-level ones; OfficeCLI's own errors come back with "
-        "the failing command's index and the whole batch is rolled back, so "
-        "start small: a few elements per batch, read the result, then continue."
+        "Apply one atomic batch of OfficeCLI commands: if one fails, nothing is "
+        "applied and its error comes back with the command index. Each command "
+        "names its verb in `command` and passes its arguments as sibling fields; "
+        "any verb works except file-level ones. Reads (get, query, view, "
+        "validate) return their output in `results`. Images come from attached "
+        "files as `file:<file_id>`. Start small: a few elements per batch, read "
+        "the result, then continue."
     ),
     annotations=ToolAnnotations(destructive_hint=True, open_world_hint=True),
 )
@@ -288,60 +288,42 @@ async def run_commands(
 
     async with (
         _admitted(user_id),
-        lock_project(user_id, project_id) as lock,
+        lock_project(user_id, project_id),
         load_project(user_id, project_id) as project,
     ):
         batch = await check_commands(
             commands,
-            inventory=project.inventory,
             fetch=partial(add_asset, project, token=token.token),
         )
-        results = await apply_batch(project, batch, lock)
-
-    outputs: list[JsonValue] = []
-    warnings: list[str] = []
-    budget = _MAX_OUTPUT_CHARS
-    dropped = 0
-
-    for result in results:
-
-        output = result.get("output")
-        messages = [
-            f"Command {result['index']}: {warning['message']}"
-            for warning in result.get("warnings", [])
-        ]
-        budget -= len(dumps(output)) + sum(map(len, messages))
-
-        # Once over budget, the rest of the batch is dropped as well.
-        if budget < 0:
-            output, messages, dropped = None, [], dropped + 1
-
-        outputs.append(output)
-        warnings.extend(messages)
+        results = await apply_batch(project, batch)
 
     return CommandsResult(
         hint=(
-            f"{dropped} results are null: the call's output exceeds "
-            f"{_MAX_OUTPUT_CHARS:,} characters. Narrow the read (a more specific "
-            "path or selector, a smaller depth) or send fewer reads per batch. "
-            if dropped else ""
-        ) + (
             "Continue the edit batch; when the user's request is fully "
             "applied, `validate` if in doubt and call `export_project` once."
         ),
-        results=outputs,
-        warnings=warnings,
+        results=[result.get("output") for result in results],
+        warnings=[
+            f"Command {result['index']}: {warning['message']}"
+            for result in results for warning in result.get("warnings", [])
+        ],
     )
 
 
 @tool(
     name="preview_project",
     description=(
-        "Render the project as an image to check the result visually: the "
-        "whole document as thumbnails, or one slide (PPTX) or page (DOCX) in "
-        "full size; XLSX shows the first sheet. Look for overflowing or "
-        "overlapping content, empty placeholders and broken layouts. Use it "
-        "after building or larger edits, not after every change."
+        "Render the project as an image: the whole document as thumbnails, or "
+        "one slide (PPTX) or page (DOCX) in full size; XLSX shows the first "
+        "sheet. "
+        + (
+            "Check it for overflowing or overlapping content, empty "
+            "placeholders and broken layouts. Use it after building or larger "
+            "edits, not after every change."
+            if _settings.preview_to_model else
+            "The image is shown to the user, not to you; use it when the user "
+            "wants to see the state, then ask what to change."
+        )
     ),
     annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
 )
@@ -377,10 +359,16 @@ async def preview_project(
                 "the master may render wrong, so never change colors because "
                 "of the preview alone. Fix what is wrong with `run_commands`, "
                 "then call `export_project`."
+                if _settings.preview_to_model else
+                f"{subject} is shown to the user as an image. Ask the user "
+                "what to change, fix it with `run_commands`, then call "
+                "`export_project`."
             ),
         ),
-        File(data=image, name=f"page-{page or 'all'}.png").to_resource_content(
-            mime_type="image/png",
+        *(
+            [File(data=image, name=f"page-{page or 'all'}.png").to_resource_content(
+                mime_type="image/png",
+            )] if _settings.preview_to_model else []
         ),
         Image(data=image).to_image_content(),
     ])

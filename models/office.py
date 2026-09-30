@@ -1,7 +1,14 @@
 from json import loads
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, JsonValue
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    JsonValue,
+    StringConstraints,
+)
 
 Format = Literal["pptx", "docx", "xlsx"]
 
@@ -10,7 +17,7 @@ class Command(BaseModel):
     # OfficeCLI validates the rest and answers with its own errors.
     model_config = ConfigDict(extra="allow")
 
-    command: str = Field(
+    command: Annotated[str, StringConstraints(to_lower=True)] = Field(
         description=(
             "OfficeCLI verb, e.g. add, set, remove, move, swap, import, get, "
             "query, view, validate, raw. Its arguments are sibling fields as in "
@@ -43,8 +50,8 @@ class Layout(BaseModel):
     )
     slots: list[str] = Field(
         description=(
-            "Placeholder slots as `phType` or `phType:idx`, e.g. `title` or "
-            "`body:1`; add them to the slide as placeholders with that `idx`."
+            "Placeholder slots as `phType:idx`, e.g. `title:0` or `body:1`; "
+            "add them to the slide as placeholders with that `phType` and `idx`."
         ),
     )
 
@@ -104,12 +111,6 @@ class XlsxInventory(BaseModel):
     sheets: list[Sheet] = Field(
         description="Worksheets in workbook order.",
     )
-    styles: dict[str, int] = Field(
-        description=(
-            "Named cell style -> cell format index. Pass the name as `style` "
-            "in a `set` command of its own."
-        ),
-    )
 
 
 type AnyInventory = PptxInventory | DocxInventory | XlsxInventory
@@ -133,9 +134,7 @@ class Template(BaseModel):
 
 class OfficeResult(BaseModel):
     hint: str = Field(
-        description=(
-            "Next step for the agent, not part of the data."
-        ),
+        description="Next step for the agent, not part of the data.",
     )
 
 
@@ -170,9 +169,7 @@ class ReferenceResult(OfficeResult):
 
 class CommandsResult(OfficeResult):
     results: list[JsonValue] = Field(
-        description=(
-            "OfficeCLI output per command, in command order; null when dropped."
-        ),
+        description="OfficeCLI output per command, in command order.",
     )
     warnings: list[str] = Field(
         description="OfficeCLI advisories, e.g. ignored props.",

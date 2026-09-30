@@ -4,21 +4,19 @@ from json import dumps
 
 from fastmcp.exceptions import ToolError
 
-from models.office import AnyInventory, Command, XlsxInventory
-from services import xlsx
+from models.office import Command
 
 # Whole files and the process, not a project.
 _FILE_COMMANDS = {"create", "open", "close", "save", "merge", "watch", "mcp", "install"}
 
 _SOURCE_PROPS = {"src", "image"}
-_FILE_REFERENCE = re.compile(r"file:([A-Za-z0-9-]{1,64})")
+_FILE_REFERENCE = re.compile(r"file:[A-Za-z0-9-]{1,64}")
 
 _MAX_BATCH_BYTES = 2**20
 
 
 async def check_commands(
     commands: list[Command],
-    inventory: AnyInventory,
     fetch: Callable[[str], Awaitable[str]],
 ) -> list[dict]:
 
@@ -29,12 +27,9 @@ async def check_commands(
             f"The batch exceeds {_MAX_BATCH_BYTES // 2**20} MB; split it."
         )
 
-    checked: list[dict] = []
-
     for index, command in enumerate(batch):
 
-        # OfficeCLI treats verbs and prop names case-insensitively.
-        verb = command["command"] = str(command["command"]).lower()
+        verb = command["command"]
         props = command.get("props", {})
 
         try:
@@ -42,6 +37,7 @@ async def check_commands(
             if not isinstance(props, dict):
                 raise ToolError("`props` must be an object of prop name -> value.")
 
+            # OfficeCLI reads prop names case-insensitively.
             props = command["props"] = {
                 str(key).lower(): value for key, value in props.items()
             }
@@ -56,17 +52,11 @@ async def check_commands(
                         "the user attached."
                     )
 
-            # Named cell styles are the one thing the engine has no prop for.
-            if isinstance(inventory, XlsxInventory):
-                command = xlsx.resolve_style(command, inventory)
-
-            checked.append(command)
-
         except ToolError as error:
             raise ToolError(f"Command {index}: {error}") from None
 
     # Invalid later commands must not trigger downloads for earlier ones.
-    for index, command in enumerate(checked):
+    for index, command in enumerate(batch):
 
         props = command.get("props", {})
 
@@ -76,4 +66,4 @@ async def check_commands(
         except ToolError as error:
             raise ToolError(f"Command {index}: {error}") from None
 
-    return checked
+    return batch

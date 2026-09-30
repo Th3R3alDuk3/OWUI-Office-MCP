@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     owui_base_url: str
     owui_public_url: str | None = None
     owui_verify_tls: bool
+    # false for models without vision
+    preview_to_model: bool
 
     valkey_url: str
 

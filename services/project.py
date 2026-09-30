@@ -13,8 +13,7 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.utilities.logging import get_logger
 from valkey.asyncio import Valkey
-from valkey.asyncio.lock import Lock
-from valkey.exceptions import LockError, WatchError
+from valkey.exceptions import LockError
 
 from config import get_settings
 from models.office import AnyInventory, PptxInventory
@@ -25,11 +24,11 @@ from services.owui import download_file
 _settings = get_settings()
 logger = get_logger(__name__)
 
-FORMATS: dict[str, ModuleType] = {
+_FORMATS: dict[str, ModuleType] = {
     module.FORMAT: module for module in (pptx, docx, xlsx)
 }
 # Macro and template variants carry other types and fall through.
-_FORMATS_BY_TYPE = {module.MIME: module for module in FORMATS.values()}
+_FORMATS_BY_TYPE = {module.MIME: module for module in _FORMATS.values()}
 
 _TEMPLATES = Path("templates")
 
@@ -70,7 +69,7 @@ async def prepare_templates() -> None:
 
     for source in sorted(_TEMPLATES.iterdir()):
 
-        if (module := FORMATS.get(source.suffix.removeprefix("."))) is None:
+        if (module := _FORMATS.get(source.suffix.removeprefix("."))) is None:
             continue
 
         try:
@@ -79,12 +78,10 @@ async def prepare_templates() -> None:
                 document = Path(scratch) / f"document.{module.FORMAT}"
                 await to_thread(copyfile, source, document)
                 await module.prepare(document)
-                # xlsx's inventory writes cell formats, so it goes first.
-                inventory = await module.inventory(document)
                 templates[source.name] = StoredTemplate(
                     module=module,
                     document=await to_thread(document.read_bytes),
-                    inventory=inventory,
+                    inventory=await module.inventory(document),
                 )
         except (ToolError, RuntimeError) as error:
             logger.warning("template %s skipped: %s", source.name, error)
@@ -135,27 +132,10 @@ async def fetch_upload(
     return module, document
 
 
-async def bind_master(
-    document: Path,
-    inventory: AnyInventory,
-    master: int | None,
-) -> AnyInventory:
-
-    if isinstance(inventory, PptxInventory):
-        inventory = pptx.bind(inventory, master)
-        # Existing slides must belong to the bound master.
-        await to_thread(pptx.check, document, inventory)
-    elif master is not None:
-        raise ToolError("`master` applies to pptx designs only.")
-
-    return inventory
-
-
 async def _store(
     key: str,
     document: Path,
     inventory: AnyInventory,
-    lock: Lock | None = None,
 ) -> None:
 
     fields = {
@@ -164,22 +144,11 @@ async def _store(
         "inventory": inventory.model_dump_json(),
     }
 
-    try:
-        # One transaction: no project without TTL, no write under a lost lock.
-        async with _valkey.pipeline() as pipe:
-            if lock is not None:
-                await pipe.watch(lock.name)
-                if await pipe.get(lock.name) != lock.local.token:
-                    raise WatchError
-                pipe.multi()
-            pipe.hset(key, mapping=fields)
-            pipe.expire(key, _settings.project_ttl)
-            await pipe.execute()
-    except WatchError:
-        raise ToolError(
-            "Lost the project lock during the batch; nothing was saved. Send "
-            "the whole batch again."
-        ) from None
+    # One transaction, so no project exists without its TTL.
+    async with _valkey.pipeline() as pipe:
+        pipe.hset(key, mapping=fields)
+        pipe.expire(key, _settings.project_ttl)
+        await pipe.execute()
 
 
 async def publish_project(
@@ -215,7 +184,7 @@ async def load_project(
     # Every access counts as activity.
     await _valkey.expire(key, _settings.project_ttl)
 
-    module = FORMATS[fields[b"format"].decode()]
+    module = _FORMATS[fields[b"format"].decode()]
 
     with TemporaryDirectory() as scratch:
 
@@ -234,7 +203,7 @@ async def load_project(
 async def lock_project(
     user_id: str,
     project_id: str,
-) -> AsyncGenerator[Lock]:
+) -> AsyncGenerator[None]:
 
     lock = _valkey.lock(
         _LOCK_KEY.format(user_id=user_id, project_id=project_id),
@@ -248,7 +217,7 @@ async def lock_project(
         )
 
     try:
-        yield lock
+        yield
     finally:
         # Releases only its own token; a lock lost meanwhile is no error here.
         with suppress(LockError):
@@ -280,22 +249,21 @@ async def add_asset(
 async def apply_batch(
     project: Project,
     batch: list[dict],
-    lock: Lock,
 ) -> list[dict]:
 
     if all(command["command"] in READ_COMMANDS for command in batch):
         return await run_batch(project.document, batch)
 
     if isinstance(project.inventory, PptxInventory):
-        await to_thread(pptx.disambiguate_layouts, project.document, batch)
+        pptx.resolve_layouts(project.inventory, batch)
 
     results = await run_batch(project.document, batch)
 
     if isinstance(project.inventory, PptxInventory):
-        await to_thread(pptx.check, project.document, project.inventory)
+        await pptx.check(project.document, project.inventory)
 
     # All fields, so an evicted project comes back whole with this edit.
-    await _store(project.key, project.document, project.inventory, lock)
+    await _store(project.key, project.document, project.inventory)
 
     return results
 
@@ -307,7 +275,10 @@ async def project_lifespan(
 
     # Below ABI 4 (Linux 6.7) Landlock cannot restrict the network.
     if LANDLOCK_ABI < 4:
-        raise RuntimeError("Landlock ABI 4 or newer is needed to confine OfficeCLI.")
+        logger.warning(
+            "Landlock ABI %d: OfficeCLI is confined only as far as this kernel "
+            "allows and keeps network access.", LANDLOCK_ABI,
+        )
 
     await _valkey.ping()
     await prepare_templates()

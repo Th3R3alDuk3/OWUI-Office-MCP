@@ -2,6 +2,7 @@ from fastmcp import FastMCP
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.middleware.rate_limiting import RateLimitingMiddleware
+from fastmcp.server.middleware.response_limiting import ResponseLimitingMiddleware
 
 from config import get_settings
 from services.project import project_lifespan
@@ -13,6 +14,8 @@ INSTRUCTIONS = (
     "Creates and edits PowerPoint, Word and Excel files from a stored template "
     "or an attached file, faithful to its design."
 )
+
+MAX_RESPONSE_BYTES = 50_000
 
 mcp = FastMCP(
     name="OWUI-Office-MCP",
@@ -30,6 +33,15 @@ mcp = FastMCP(
                 token.claims.get("id", "anonymous")
                 if (token := get_access_token()) else "anonymous"
             ),
+        ),
+        ResponseLimitingMiddleware(
+            max_size=MAX_RESPONSE_BYTES,
+            truncation_suffix=(
+                "\n\n[Output truncated. Narrow the read: a more specific path or "
+                "selector, a smaller depth, or fewer reads per batch.]"
+            ),
+            # Only OfficeCLI read output grows without bound.
+            tools=["run_commands"],
         ),
     ],
     lifespan=project_lifespan,
