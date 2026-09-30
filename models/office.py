@@ -30,7 +30,7 @@ def _listed(
     value: object,
 ) -> object:
 
-    # Weak models send the array as a JSON string or a single command.
+    # The array may arrive as a JSON string or a single command.
     if isinstance(value, str):
         value = loads(value)
 

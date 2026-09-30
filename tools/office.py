@@ -65,7 +65,7 @@ async def _admitted(
     try:
         yield
     except ToolError as error:
-        # What the model got wrong, for tuning the hints.
+        # What the model got wrong.
         logger.warning("user %s: %s", user_id, error)
         raise
     finally:
@@ -355,10 +355,8 @@ async def preview_project(
             text=(
                 f"{subject} is attached as an image and shown to the user. "
                 "It approximates Office's rendering: judge layout, overflow "
-                "and missing content, not pixel details. Text colors from "
-                "the master may render wrong, so never change colors because "
-                "of the preview alone. Fix what is wrong with `run_commands`, "
-                "then call `export_project`."
+                "and missing content, not colors or pixel details. Fix what "
+                "is wrong with `run_commands`, then call `export_project`."
                 if _settings.preview_to_model else
                 f"{subject} is shown to the user as an image. Ask the user "
                 "what to change, fix it with `run_commands`, then call "
