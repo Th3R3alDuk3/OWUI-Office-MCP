@@ -14,20 +14,22 @@ services:
     read_only: true
     tmpfs:
       - /tmp
-    # Python, OfficeCLI runs and Chromium together; scale it with
-    # OFFICECLI_MAX_PROCESSES and MAX_CONCURRENT_REQUESTS.
-    mem_limit: 4g
+    # OFFICECLI_MAX_PROCESSES x (OFFICECLI_MAX_MEMORY + 0.5 GB for Chromium)
+    # plus 2 GB for Python and the tmpfs scratch.
+    mem_limit: 8g
     depends_on:
       - valkey
 
   valkey:
     image: valkey/valkey:9-alpine
+    container_name: valkey
     restart: unless-stopped
     # Drafts: bounded, LRU-evicted, nothing on disk.
     command: valkey-server --maxmemory 1gb --maxmemory-policy volatile-lru --save ""
 
   valkey-admin:
     image: valkey/valkey-admin:1.1.1
+    container_name: valkey-admin
     restart: unless-stopped
     # No login, so localhost only.
     ports:

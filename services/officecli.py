@@ -3,6 +3,7 @@ from asyncio.subprocess import PIPE
 from contextlib import suppress
 from ctypes import CDLL
 from json import JSONDecodeError, dumps, loads
+from math import ceil, sqrt
 from os import killpg
 from pathlib import Path
 from signal import SIGKILL
@@ -101,8 +102,9 @@ async def _execute(
 
     finally:
         _semaphore.release()
-        logger.info("officecli %s: %.2f s",
-            arguments[0], perf_counter() - started)
+        logger.info(
+            "officecli %s: %.2f s", arguments[0], perf_counter() - started,
+        )
 
     return (
         process.returncode,
@@ -178,13 +180,23 @@ async def screenshot(
     page: int | None,
 ) -> bytes:
 
+    if page:
+        target = ("--page", str(page))
+    elif file.suffix == ".pptx":
+        # OfficeCLI's own columns cut slides off; as many columns as rows fit.
+        (slides,) = await run_batch(file, [
+            {"command": "query", "selector": "slide"},
+        ])
+        count = len(slides["output"]["results"])
+        target = ("--grid", str(ceil(sqrt(count)) or 1))
+    else:
+        target = ("--grid",)
+
     with TemporaryDirectory(prefix="oc-") as temp:
 
         image = Path(temp) / "page.png"
         returncode, stdout, stderr = await _execute(
-            "view", file.name, "screenshot",
-            # Without a page, all slides or pages as one contact sheet.
-            *(("--page", str(page)) if page else ("--grid",)),
+            "view", file.name, "screenshot", *target,
             "-o", str(image),
             cwd=file.parent,
             temp=Path(temp),

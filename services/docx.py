@@ -12,14 +12,16 @@ INVENTORY = DocxInventory
 
 
 START_HINT = """
-Use style IDs from `inventory.styles`. Build in steps: a few blocks per
-batch, then `view outline`, then continue. New blocks go into `/body` and are
-appended unless `index`, `after` or `before` say otherwise; paths are
-1-based, `index` is 0-based. Tables take `data` "H1,H2;r1c1,r1c2", charts
-`chartType`, `categories` "Q1,Q2" and `data` "Revenue:1,2;Costs:3,4", images
-`src` "file:<file_id>" from attached files. Stay within the design: change
-colors, fonts and other appearance only when the user asks. `get_reference`
-documents elements and props.
+Use style IDs from `inventory.styles` and check the result with `view outline`.
+Each heading, paragraph and list item is its own block with a `style`. New
+blocks go into `/body` and are appended unless `index`, `after` or `before` say
+otherwise. Paths are 1-based, `index` in add/move is 0-based. Charts take
+`chartType`, `categories` "Q1,Q2" and `data` "Revenue:1,2;Costs:3,4"; tables
+`data` "H1,H2;r1c1,r1c2"; images `src` "file:<file_id>" from attached files;
+comments are `add` type `comment` with the props `text` and `author` and the
+paragraph's path as `parent`. Change colors and fonts only when the user asks
+or text would be unreadable, then with theme colors such as `accent1`.
+`get_reference` documents elements and props.
 """.strip()
 
 _NAMESPACE = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}

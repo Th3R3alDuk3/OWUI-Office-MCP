@@ -83,7 +83,8 @@ async def upload_file(
 
             if not file_id:
                 raise RuntimeError(
-                    "OpenWebUI upload response carries no file id.")
+                    "OpenWebUI upload response carries no file id."
+                )
 
         return _FILE_DOWNLOAD_URL.format(
             base_url=_settings.owui_public_url or _settings.owui_base_url,

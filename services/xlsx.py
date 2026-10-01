@@ -9,14 +9,15 @@ INVENTORY = XlsxInventory
 
 
 START_HINT = """
-Sheets, values and formulas of the design are kept; `inventory.sheets`
-counts their rows. Build in steps and read back with `view`. `import` with
-`text` (CSV, a command field) and the props `startCell` and `header` fills a
-block; `set` with the props `value` or `formula` one cell. Charts take
-`chartType`, `dataRange` "A1:B3" and `anchor` "D2:J18"; images `src`
-"file:<file_id>" from attached files. Stay within the design: change colors,
-fonts and other appearance only when the user asks. `get_reference`
-documents elements and props.
+Sheets, values and formulas of the design are kept; `inventory.sheets` counts
+their rows. Check the result with `view`. `import` with `text` (CSV, a command
+field) and the props `startCell` and `header` fills a block; `set` with the
+props `value` or `formula` one cell. Charts take `chartType`, `dataRange`
+"A1:B3" and `anchor` "D2:J18"; images `src` "file:<file_id>" from attached
+files; comments are `add` type `comment` with the props `text` and `author` and
+the cell's path as `parent`, e.g. `/Sheet1/B2`. Change colors and fonts only
+when the user asks or text would be unreadable, then with theme colors such as
+`accent1`. `get_reference` documents elements and props.
 """.strip()
 
 

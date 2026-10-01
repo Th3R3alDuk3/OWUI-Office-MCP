@@ -95,8 +95,8 @@ async def list_templates() -> TemplatesResult:
         listed.append(Template(
             name=name,
             format=stored.module.FORMAT,
-            masters=(
-                {master.index: master.name for master in inventory.masters}
+            slide_masters=(
+                {master.index: master.name for master in inventory.slide_masters}
                 if isinstance(inventory, PptxInventory) else None
             ),
         ))
@@ -104,10 +104,10 @@ async def list_templates() -> TemplatesResult:
     return TemplatesResult(
         hint=(
             "Pick a template of the format the user wants and call "
-            "`start_project`; for a PPTX template with several `masters`, also "
-            "pass the master the user named. If several could fit and the user "
-            "named none, ask the user instead of guessing, template and master "
-            "in one question."
+            "`start_project`; for a PPTX template with several `slide_masters`, "
+            "also pass the one the user named. If several could fit and the "
+            "user named none, ask the user instead of guessing, template and "
+            "slide master in one question."
             if listed else
             "No stored templates. Ask the administrator to add some, or ask "
             "the user to attach a file whose design to use."
@@ -123,9 +123,8 @@ async def list_templates() -> TemplatesResult:
         "an attached file (`file_id`), exactly one. Of an attached file only the "
         "design is used and its slides or body text are dropped, unless "
         "`keep_content` is true; the attachment itself never changes. A PPTX "
-        "project is bound to one slide master: with several, pass `master`; "
-        "without it the call lists them. Returns the `project_id` and the "
-        "design's inventory."
+        "project is bound to one slide master: with several, pass "
+        "`slide_master`; without it the call lists them."
     ),
     annotations=ToolAnnotations(destructive_hint=False, open_world_hint=True),
 )
@@ -145,15 +144,16 @@ async def start_project(
     keep_content: bool = Field(
         default=False,
         description=(
-            "Edit the attached file as it is instead of using only its design."
+            "Edit the attached file as it is instead of using only its "
+            "design. Workbooks keep their content either way."
         ),
     ),
-    master: int | None = Field(
+    slide_master: int | None = Field(
         default=None,
         ge=1,
         description=(
             "PPTX only: index of the slide master the project is bound to. "
-            "Required when the design has several masters."
+            "Required when the design has several slide masters."
         ),
     ),
     token: AccessToken = CurrentAccessToken(),
@@ -176,8 +176,8 @@ async def start_project(
                         )
                     if keep_content:
                         raise ToolError(
-                            "`keep_content` applies to attached files; stored "
-                            "templates are already empty."
+                            "`keep_content` applies to attached files only; "
+                            "leave it out for templates."
                         )
                     module, inventory = stored.module, stored.inventory
                     document = directory / f"document.{module.FORMAT}"
@@ -200,11 +200,12 @@ async def start_project(
                     raise ToolError("Pass either `template_name` or `file_id`.")
 
             if isinstance(inventory, PptxInventory):
-                inventory = pptx.bind(inventory, master)
-                # Existing slides must belong to the bound master.
-                await pptx.check(document, inventory)
-            elif master is not None:
-                raise ToolError("`master` applies to pptx designs only.")
+                inventory = pptx.bind(inventory, slide_master)
+                # Only kept slides can stray from the bound slide master.
+                if keep_content:
+                    await pptx.check(document, inventory)
+            elif slide_master is not None:
+                raise ToolError("`slide_master` applies to PPTX designs only.")
 
             project_id = await publish_project(user_id, document, inventory)
 
@@ -248,10 +249,7 @@ async def get_reference(
         reference = await lookup_reference(format, topic)
 
     return ReferenceResult(
-        hint=(
-            "Use the props as documented; stay within the design unless the "
-            "user asks for appearance changes."
-        ),
+        hint="Use the props as documented.",
         reference=reference,
     )
 
@@ -261,11 +259,9 @@ async def get_reference(
     description=(
         "Apply one atomic batch of OfficeCLI commands: if one fails, nothing is "
         "applied and its error comes back with the command index. Each command "
-        "names its verb in `command` and passes its arguments as sibling fields; "
-        "any verb works except file-level ones. Reads (get, query, view, "
-        "validate) return their output in `results`. Images come from attached "
-        "files as `file:<file_id>`. Start small: a few elements per batch, read "
-        "the result, then continue."
+        "names its verb in `command`; any verb works except file-level ones, "
+        "and reads (get, query, view, validate, raw) return their output in "
+        "`results`. Send a whole step as one batch, not command by command."
     ),
     annotations=ToolAnnotations(destructive_hint=True, open_world_hint=True),
 )
@@ -299,8 +295,8 @@ async def run_commands(
 
     return CommandsResult(
         hint=(
-            "Continue the edit batch; when the user's request is fully "
-            "applied, `validate` if in doubt and call `export_project` once."
+            "Continue; once the user's request is fully applied, call "
+            "`export_project` once."
         ),
         results=[result.get("output") for result in results],
         warnings=[
@@ -355,8 +351,9 @@ async def preview_project(
             text=(
                 f"{subject} is attached as an image and shown to the user. "
                 "It approximates Office's rendering: judge layout, overflow "
-                "and missing content, not colors or pixel details. Fix what "
-                "is wrong with `run_commands`, then call `export_project`."
+                "and missing or unreadable content, not exact colors or pixel "
+                "details. Fix what is wrong with `run_commands`, then call "
+                "`export_project`."
                 if _settings.preview_to_model else
                 f"{subject} is shown to the user as an image. Ask the user "
                 "what to change, fix it with `run_commands`, then call "
@@ -377,8 +374,7 @@ async def preview_project(
     description=(
         "Upload the project's document to OpenWebUI as the user's download. "
         "Call it once the user's request is fully applied, not after each "
-        "change; run `validate` through `run_commands` first if in doubt. The "
-        "project stays editable; export it again after later edits."
+        "change; run `validate` first if in doubt."
     ),
     annotations=ToolAnnotations(destructive_hint=False, open_world_hint=True),
 )

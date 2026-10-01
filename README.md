@@ -2,7 +2,7 @@
 
 [![App image](https://github.com/Th3R3alDuk3/OWUI-Office-MCP/actions/workflows/app.yml/badge.svg)](https://github.com/Th3R3alDuk3/OWUI-Office-MCP/actions/workflows/app.yml)
 [![Version](https://img.shields.io/github/v/tag/Th3R3alDuk3/OWUI-Office-MCP?label=version)](https://github.com/Th3R3alDuk3/OWUI-Office-MCP/tags)
-[![Python](https://img.shields.io/badge/python-3.14%2B-blue)](pyproject.toml)
+[![Python](https://img.shields.io/badge/python-3.13%2B-blue)](pyproject.toml)
 [![License](https://img.shields.io/github/license/Th3R3alDuk3/OWUI-Office-MCP)](LICENSE)
 
 > Office documents for OpenWebUI via MCP.
@@ -54,7 +54,8 @@ claim. Use a TLS reverse proxy outside a trusted network.
 
 For testing, the server runs directly with [uv](https://docs.astral.sh/uv/).
 It expects `officecli` and `landrun` in `/usr/local/bin`, a Valkey at
-`VALKEY_URL` and, for previews, a `chromium` on the `PATH`:
+`VALKEY_URL` (here `valkey://localhost:6379`) and, for previews, a `chromium`
+on the `PATH`:
 
 ```bash
 bin/download.sh && sudo install -m 755 bin/officecli bin/landrun /usr/local/bin/
@@ -66,9 +67,10 @@ uv run python main.py
 ### Templates
 
 [templates/](templates/) holds the stored designs (`.pptx`, `.docx`, `.xlsx`).
-At startup their sample slides and body text are removed; masters, layouts
-and styles stay. Mount `-v ./templates:/app/templates` to swap templates
-without rebuilding, and restart the server afterwards.
+At startup their sample slides and body text are removed; slide masters,
+layouts and styles stay, and workbooks stay as they are. Mount
+`-v ./templates:/app/templates` to swap templates without rebuilding, and
+restart the server afterwards.
 
 ### Prebuilt image
 
@@ -85,7 +87,7 @@ index.
 
 | Tool | Description |
 |---|---|
-| `list_templates` | Stored templates with their format and, for PPTX, their masters |
+| `list_templates` | Stored templates with their format and, for PPTX, their slide masters |
 | `start_project` | Project from a stored template or an attached file: its design only, or the file as it is |
 | `get_reference` | OfficeCLI reference for an element, a verb or both |
 | `run_commands` | One atomic batch of OfficeCLI commands; reads return their output |
@@ -108,9 +110,10 @@ index.
 - `project_id`: from `start_project`, which also returns the design's
   inventory: layouts and slots, styles or sheets.
 - `keep_content`: edit an attached file as it is; without it only its design
-  is used and its slides or body text are dropped.
-- `master`: a `pptx` project is bound to one slide master; with several,
-  `start_project` needs it and lists them when it is missing.
+  is used and its slides or body text are dropped. Workbooks keep their
+  content either way.
+- `slide_master`: a `pptx` project is bound to one slide master; with
+  several, `start_project` needs it and lists them when it is missing.
 - `commands`: the OfficeCLI batch shape, any command except file-level ones.
   OfficeCLI validates and answers with its own errors; `get_reference`
   documents elements and props. Images come from attached files as
@@ -132,19 +135,20 @@ user, OfficeCLI processes, memory and timeouts, and the project TTL.
   `OFFICECLI_MAX_MEMORY` bounds its heap, so a pathological document kills
   its own run.
 - **Commands:** file-level verbs are denied; everything else OfficeCLI
-  validates itself. A PPTX project stays within its bound master. Batches
-  hold up to 500 commands and 1 MB; `run_commands` answers are cut at 50 KB.
-- **Files:** uploads stop past 100 MB, images past 20 MB; macro and template
-  variants are refused.
+  validates itself. A PPTX project stays within its bound slide master. Batches
+  hold up to 500 commands, 1 MB and 10 attached files; `run_commands`
+  answers are cut at 50 KB.
+- **Files:** uploads and documents stop past 100 MB, images past 20 MB;
+  macro and template variants are refused.
 - **Drafts:** projects are Valkey hashes with a TTL, edited under a
   per-project lock and written back only when the whole batch succeeded.
   Valkey runs bounded and keeps nothing on disk; give it a password in
   `VALKEY_URL` when it is reachable beyond the compose network.
 - **Errors:** tool errors say what to do next and carry no exception text.
-- **Sizing:** the container has a 4 GB memory limit for Python, OfficeCLI runs
-  and Chromium together; raise it or lower `OFFICECLI_MAX_MEMORY` when
-  `OFFICECLI_MAX_PROCESSES` grows. Limits are per server process; several
-  replicas can share one Valkey.
+- **Sizing:** the container's 8 GB cover four OfficeCLI runs with 1 GB heap
+  and Chromium each, plus Python and the tmpfs scratch; scale it with
+  `OFFICECLI_MAX_PROCESSES`. Previews of large decks need the 1 GB heap.
+  Limits are per server process; several replicas can share one Valkey.
 
 ## 🧩 Layout
 
@@ -153,7 +157,7 @@ user, OfficeCLI processes, memory and timeouts, and the project TTL.
 - [`models/office.py`](models/office.py) - the command shape, inventories and results
 - [`services/owui.py`](services/owui.py) - OpenWebUI downloads and uploads
 - [`services/officecli.py`](services/officecli.py) - OfficeCLI runs under landrun
-- [`services/pptx.py`](services/pptx.py), [`docx.py`](services/docx.py), [`xlsx.py`](services/xlsx.py) - one module per format: preparation and inventory; pptx also the master binding
+- [`services/pptx.py`](services/pptx.py), [`docx.py`](services/docx.py), [`xlsx.py`](services/xlsx.py) - one module per format: preparation and inventory; pptx also the slide master binding
 - [`services/project.py`](services/project.py) - Valkey project store, locks, templates, lifespan
 - [`tools/`](tools/) - the six MCP tools and the command guard
 - [`templates/`](templates/) - stored designs

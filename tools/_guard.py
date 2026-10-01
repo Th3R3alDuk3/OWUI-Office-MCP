@@ -7,12 +7,15 @@ from fastmcp.exceptions import ToolError
 from models.office import Command
 
 # Whole files and the process, not a project.
-_FILE_COMMANDS = {"create", "open", "close", "save", "merge", "watch", "mcp", "install"}
+_FILE_COMMANDS = {
+    "create", "open", "close", "save", "merge", "watch", "mcp", "install",
+}
 
 _SOURCE_PROPS = {"src", "image"}
 _FILE_REFERENCE = re.compile(r"file:[A-Za-z0-9-]{1,64}")
 
 _MAX_BATCH_BYTES = 2**20
+_MAX_FILES = 10
 
 
 async def check_commands(
@@ -55,15 +58,23 @@ async def check_commands(
         except ToolError as error:
             raise ToolError(f"Command {index}: {error}") from None
 
+    file_ids = {
+        str(command["props"][key]).removeprefix("file:")
+        for command in batch
+        for key in _SOURCE_PROPS & command["props"].keys()
+    }
+
+    if len(file_ids) > _MAX_FILES:
+        raise ToolError(
+            f"The batch uses over {_MAX_FILES} attached files; split it."
+        )
+
     # Invalid later commands must not trigger downloads for earlier ones.
-    for index, command in enumerate(batch):
+    fetched = {file_id: await fetch(file_id) for file_id in file_ids}
 
-        props = command.get("props", {})
-
-        try:
-            for key in _SOURCE_PROPS & props.keys():
-                props[key] = await fetch(str(props[key])[5:])
-        except ToolError as error:
-            raise ToolError(f"Command {index}: {error}") from None
+    for command in batch:
+        props = command["props"]
+        for key in _SOURCE_PROPS & props.keys():
+            props[key] = fetched[str(props[key]).removeprefix("file:")]
 
     return batch

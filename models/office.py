@@ -43,28 +43,36 @@ Commands = Annotated[list[Command], BeforeValidator(_listed)]
 
 class Layout(BaseModel):
     index: int = Field(
-        description="Global layout index; pass it as the slide's `layout` prop.",
+        description=(
+            "Layout index in PowerPoint's order; pass it as the slide's "
+            "`layout` prop."
+        ),
     )
     name: str = Field(
         description="Layout name, for orientation only.",
     )
-    slots: list[str] = Field(
+    slots: dict[str, dict[str, str]] = Field(
         description=(
-            "Placeholder slots as `phType:idx`, e.g. `title:0` or `body:1`; "
-            "add them to the slide as placeholders with that `phType` and `idx`."
+            "Placeholder slots as `phType:idx`, e.g. `title:0` or `body:1`, "
+            "with their `x`, `y`, `width` and `height` on the slide; add them "
+            "as placeholders with that `phType` and `idx`, or use the position "
+            "to fit a chart or picture into the slot."
         ),
     )
 
 
-class Master(BaseModel):
+class SlideMaster(BaseModel):
     index: int = Field(
-        description="Master index for the `master` parameter.",
+        description=(
+            "Slide master index in PowerPoint's order; pass it as "
+            "`slide_master`."
+        ),
     )
     name: str = Field(
-        description="Master name.",
+        description="Slide master name.",
     )
     layouts: list[Layout] = Field(
-        description="The master's layouts.",
+        description="The slide master's layouts.",
     )
 
 
@@ -72,7 +80,7 @@ class PptxInventory(BaseModel):
     slide_size: str = Field(
         description="Slide width x height; size charts and images from it.",
     )
-    masters: list[Master] = Field(
+    slide_masters: list[SlideMaster] = Field(
         description="The slide master the project is bound to, with its layouts.",
     )
 
@@ -123,18 +131,18 @@ class Template(BaseModel):
     format: Format = Field(
         description="Document format the template produces.",
     )
-    masters: dict[int, str] | None = Field(
+    slide_masters: dict[int, str] | None = Field(
         default=None,
         description=(
             "PPTX only: slide master index -> name; pass the index as "
-            "`master` to `start_project`."
+            "`slide_master` to `start_project`."
         ),
     )
 
 
 class OfficeResult(BaseModel):
     hint: str = Field(
-        description="Next step for the agent, not part of the data.",
+        description="Your next step, not part of the data.",
     )
 
 
@@ -172,7 +180,9 @@ class CommandsResult(OfficeResult):
         description="OfficeCLI output per command, in command order.",
     )
     warnings: list[str] = Field(
-        description="OfficeCLI advisories, e.g. ignored props.",
+        description=(
+            "OfficeCLI advisories; unsupported props show up in `results`."
+        ),
     )
 
 

@@ -1,4 +1,4 @@
-from asyncio import to_thread
+from asyncio import get_running_loop, timeout_at, to_thread
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
@@ -12,6 +12,7 @@ from types import ModuleType
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.utilities.logging import get_logger
+from pydantic import ValidationError
 from valkey.asyncio import Valkey
 from valkey.exceptions import LockError
 
@@ -37,7 +38,7 @@ _LOCK_KEY = "lock:{user_id}:{project_id}"
 # A replica that dies mid-edit leaves its lock behind for this long.
 _LOCK_TTL_SECONDS = 600
 
-_MAX_UPLOAD_BYTES = 100 * 2**20
+_MAX_DOCUMENT_BYTES = 100 * 2**20
 _MAX_ASSET_BYTES = 20 * 2**20
 
 _IMAGE_TYPES = {
@@ -83,7 +84,7 @@ async def prepare_templates() -> None:
                     document=await to_thread(document.read_bytes),
                     inventory=await module.inventory(document),
                 )
-        except (ToolError, RuntimeError) as error:
+        except Exception as error:  # noqa: BLE001
             logger.warning("template %s skipped: %s", source.name, error)
 
 
@@ -119,7 +120,7 @@ async def fetch_upload(
     token: str,
 ) -> tuple[ModuleType, Path]:
 
-    data, content_type = await _download(file_id, token, _MAX_UPLOAD_BYTES)
+    data, content_type = await _download(file_id, token, _MAX_DOCUMENT_BYTES)
 
     if (module := _FORMATS_BY_TYPE.get(content_type)) is None:
         raise ToolError(
@@ -138,8 +139,16 @@ async def _store(
     inventory: AnyInventory,
 ) -> None:
 
+    data = await to_thread(document.read_bytes)
+
+    if len(data) > _MAX_DOCUMENT_BYTES:
+        raise ToolError(
+            f"The document would exceed {_MAX_DOCUMENT_BYTES // 2**20} MB; "
+            "nothing was changed."
+        )
+
     fields = {
-        "document": await to_thread(document.read_bytes),
+        "document": data,
         "format": document.suffix.removeprefix("."),
         "inventory": inventory.model_dump_json(),
     }
@@ -186,6 +195,14 @@ async def load_project(
 
     module = _FORMATS[fields[b"format"].decode()]
 
+    try:
+        inventory = module.INVENTORY.model_validate_json(fields[b"inventory"])
+    except ValidationError:
+        raise ToolError(
+            f"Project '{project_id}' comes from an older server version. Start "
+            "a new one with `start_project`."
+        ) from None
+
     with TemporaryDirectory() as scratch:
 
         document = Path(scratch) / f"document.{module.FORMAT}"
@@ -195,7 +212,7 @@ async def load_project(
             key=key,
             document=document,
             module=module,
-            inventory=module.INVENTORY.model_validate_json(fields[b"inventory"]),
+            inventory=inventory,
         )
 
 
@@ -210,6 +227,8 @@ async def lock_project(
         timeout=_LOCK_TTL_SECONDS,
         blocking_timeout=_settings.officecli_queue_timeout,
     )
+    # Counted from before the lock, so no edit outlives it.
+    deadline = get_running_loop().time() + _LOCK_TTL_SECONDS
 
     if not await lock.acquire():
         raise ToolError(
@@ -217,7 +236,13 @@ async def lock_project(
         )
 
     try:
-        yield
+        async with timeout_at(deadline):
+            yield
+    except TimeoutError:
+        raise ToolError(
+            f"The edit took over {_LOCK_TTL_SECONDS} s and was stopped; split "
+            "the batch."
+        ) from None
     finally:
         # Releases only its own token; a lock lost meanwhile is no error here.
         with suppress(LockError):
@@ -280,10 +305,9 @@ async def project_lifespan(
             "allows and keeps network access.", LANDLOCK_ABI,
         )
 
-    await _valkey.ping()
-    await prepare_templates()
-
     try:
+        await _valkey.ping()
+        await prepare_templates()
         yield
     finally:
         await _valkey.aclose()

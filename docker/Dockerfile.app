@@ -1,4 +1,4 @@
-FROM ghcr.io/astral-sh/uv:python3.14-trixie-slim
+FROM ghcr.io/astral-sh/uv:python3.13-trixie-slim
 
 # OfficeCLI screenshots need a `chromium`; Landlock denies /dev/shm. The fonts
 # are metric-compatible with Office's, so line breaks match.
