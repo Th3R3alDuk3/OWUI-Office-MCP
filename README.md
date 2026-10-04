@@ -59,7 +59,7 @@ on the `PATH`:
 
 ```bash
 bin/download.sh && sudo install -m 755 bin/officecli bin/landrun /usr/local/bin/
-docker run -d -p 6379:6379 valkey/valkey:9-alpine
+docker run -d -p 6379:6379 valkey/valkey:9.1.2-alpine
 uv sync
 uv run python main.py
 ```
