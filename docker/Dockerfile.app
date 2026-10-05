@@ -26,7 +26,10 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # The binaries already sit in /usr/local/bin.
 COPY --exclude=bin . .
 
-ENV PATH="/app/.venv/bin:$PATH"
+# Plain log lines, no banner: the container's stdout is the log.
+ENV PATH="/app/.venv/bin:$PATH" \
+    FASTMCP_ENABLE_RICH_LOGGING=false \
+    FASTMCP_SHOW_SERVER_BANNER=false
 
 RUN useradd --system --uid 1000 app
 USER app

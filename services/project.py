@@ -182,16 +182,17 @@ async def load_project(
 ) -> AsyncGenerator[Project]:
 
     key = _PROJECT_KEY.format(user_id=user_id, project_id=project_id)
-    # valkey-py types the async commands like the sync ones.
-    fields: dict[bytes, bytes] = await _valkey.hgetall(key)  # pyright: ignore[reportGeneralTypeIssues]
+
+    # Every access counts as activity; one round trip for both.
+    async with _valkey.pipeline() as pipe:
+        pipe.hgetall(key)
+        pipe.expire(key, _settings.project_ttl)
+        fields, _ = await pipe.execute()
 
     if not fields:
         raise ToolError(
             f"Project '{project_id}' not found. Start one with `start_project`."
         )
-
-    # Every access counts as activity.
-    await _valkey.expire(key, _settings.project_ttl)
 
     module = _FORMATS[fields[b"format"].decode()]
 
@@ -281,11 +282,10 @@ async def apply_batch(
 
     if isinstance(project.inventory, PptxInventory):
         pptx.resolve_layouts(project.inventory, batch)
-
-    results = await run_batch(project.document, batch)
-
-    if isinstance(project.inventory, PptxInventory):
-        await pptx.check(project.document, project.inventory)
+        *results, deck = await run_batch(project.document, [*batch, pptx.DECK])
+        pptx.check(deck, project.inventory)
+    else:
+        results = await run_batch(project.document, batch)
 
     # All fields, so an evicted project comes back whole with this edit.
     await _store(project.key, project.document, project.inventory)

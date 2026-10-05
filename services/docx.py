@@ -19,9 +19,9 @@ otherwise. Paths are 1-based, `index` in add/move is 0-based. Charts take
 `chartType`, `categories` "Q1,Q2" and `data` "Revenue:1,2;Costs:3,4"; tables
 `data` "H1,H2;r1c1,r1c2"; images `src` "file:<file_id>" from attached files;
 comments are `add` type `comment` with the props `text` and `author` and the
-paragraph's path as `parent`. Change colors and fonts only when the user asks
-or text would be unreadable, then with theme colors such as `accent1`.
-`get_reference` documents elements and props.
+paragraph's path, e.g. `/body/p[1]`, as `parent`. Change colors and fonts only
+when the user asks or text would be unreadable, then with theme colors such
+as `accent1`. `get_reference` documents elements and props.
 """.strip()
 
 _NAMESPACE = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}

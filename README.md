@@ -130,7 +130,8 @@ user, OfficeCLI processes, memory and timeouts, and the project TTL.
   attachments are tied to that user, so nobody reaches another user's
   projects or files.
 - **Isolation:** every OfficeCLI run starts through landrun and is confined by
-  Landlock to its scratch directory, read-only system paths and no network.
+  Landlock to its scratch directory, read-only system paths and no TCP; UDP
+  stays open until Landlock ABI 10 (Linux 7.2) reaches landrun.
   `OFFICECLI_MAX_MEMORY` bounds its heap, so a pathological document kills
   its own run.
 - **Commands:** OfficeCLI validates the batch itself; its batch verbs work
@@ -146,7 +147,8 @@ user, OfficeCLI processes, memory and timeouts, and the project TTL.
   `VALKEY_URL` when it is reachable beyond the compose network.
 - **Errors:** tool errors say what to do next and carry no exception text.
 - **Sizing:** the container's 8 GB cover four OfficeCLI runs with 1 GB heap
-  and Chromium each, plus Python and the tmpfs scratch; scale it with
+  and Chromium each, plus 2 GB for Python and the tmpfs scratch, which hold
+  `MAX_CONCURRENT_REQUESTS` documents at once; scale it with
   `OFFICECLI_MAX_PROCESSES`. Previews of large decks need the 1 GB heap.
   Limits are per server process; several replicas can share one Valkey.
 

@@ -28,7 +28,7 @@ from models.office import (
     TemplatesResult,
 )
 from services import pptx
-from services.officecli import lookup_reference, screenshot
+from services.officecli import lookup_reference, run_batch, screenshot
 from services.owui import upload_file
 from services.project import (
     add_asset,
@@ -203,7 +203,8 @@ async def start_project(
                 inventory = pptx.bind(inventory, slide_master)
                 # Only kept slides can stray from the bound slide master.
                 if keep_content:
-                    await pptx.check(document, inventory)
+                    (deck,) = await run_batch(document, [pptx.DECK])
+                    pptx.check(deck, inventory)
             elif slide_master is not None:
                 raise ToolError("`slide_master` applies to PPTX designs only.")
 

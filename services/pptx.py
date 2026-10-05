@@ -15,10 +15,11 @@ INVENTORY = PptxInventory
 
 START_HINT = """
 Bound to the slide master in `inventory.slide_masters`: use its layouts and
-slots only. Check the result with `view outline` or `preview_project`. Add a
-slide with `add` type `slide`, `parent` `/` and the prop `layout` = the
-layout's `index`, but not the props `title` or `text`: those ignore the
-layout's positions. Placeholders, speaker notes and comments take the slide's
+slots only. Check the result with `view outline` or `preview_project`, text
+overflow with `view issues`. Add a slide with `add` type `slide`, `parent` `/`
+and the prop `layout` = the layout's `index`, but not the props `title` or
+`text`: those ignore the layout's positions. Placeholders, speaker notes and
+comments take the slide's
 path, e.g. `/slide[1]`, as `parent`: fill a slot with `add` type `placeholder`
 and the props `phType` and `idx` from `slots`, notes with type `notes` and the
 prop `text`, comments with type `comment` and the props `text` and `author`.
@@ -37,6 +38,8 @@ or `accent1`. `get_reference` documents elements and props.
 # Slots the master fills itself.
 _FIXED_SLOTS = {"date", "footer", "header", "slidenum"}
 _POSITION = ("x", "y", "width", "height")
+# Appended to every edit batch, so the check needs no run of its own.
+DECK = {"command": "get", "path": "/", "depth": 2}
 
 _PRESENTATION = "/ppt/presentation.xml"
 _NAMESPACES = {
@@ -252,14 +255,11 @@ def resolve_layouts(
         props["layout"] = f" {index}"
 
 
-async def check(
-    file: Path,
+def check(
+    deck: dict,
     inventory: PptxInventory,
 ) -> None:
 
-    (deck,) = await run_batch(file, [
-        {"command": "get", "path": "/", "depth": 2},
-    ])
     slots: dict[str, set[str]] = {}
 
     for master in inventory.slide_masters:
