@@ -6,11 +6,6 @@ from fastmcp.exceptions import ToolError
 
 from models.office import Command
 
-# Whole files and the process, not a project.
-_FILE_COMMANDS = {
-    "create", "open", "close", "save", "merge", "watch", "mcp", "install",
-}
-
 _SOURCE_PROPS = {"src", "image"}
 _FILE_REFERENCE = re.compile(r"file:[A-Za-z0-9-]{1,64}")
 
@@ -32,7 +27,6 @@ async def check_commands(
 
     for index, command in enumerate(batch):
 
-        verb = command["command"]
         props = command.get("props", {})
 
         try:
@@ -44,9 +38,6 @@ async def check_commands(
             props = command["props"] = {
                 str(key).lower(): value for key, value in props.items()
             }
-
-            if verb in _FILE_COMMANDS:
-                raise ToolError(f"`{verb}` works on files, not on a project.")
 
             for key in _SOURCE_PROPS & props.keys():
                 if not _FILE_REFERENCE.fullmatch(str(props[key])):

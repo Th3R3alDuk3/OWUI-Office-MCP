@@ -114,10 +114,9 @@ index.
   content either way.
 - `slide_master`: a `pptx` project is bound to one slide master; with
   several, `start_project` needs it and lists them when it is missing.
-- `commands`: the OfficeCLI batch shape, any command except file-level ones.
-  OfficeCLI validates and answers with its own errors; `get_reference`
-  documents elements and props. Images come from attached files as
-  `file:<file_id>`.
+- `commands`: the OfficeCLI batch shape. OfficeCLI validates and answers
+  with its own errors; `get_reference` documents elements and props. Images
+  come from attached files as `file:<file_id>`.
 
 Every result carries a `hint` with the next step. A project expires after
 `PROJECT_TTL` seconds without access; the exported file lives on in OpenWebUI.
@@ -134,10 +133,11 @@ user, OfficeCLI processes, memory and timeouts, and the project TTL.
   Landlock to its scratch directory, read-only system paths and no network.
   `OFFICECLI_MAX_MEMORY` bounds its heap, so a pathological document kills
   its own run.
-- **Commands:** file-level verbs are denied; everything else OfficeCLI
-  validates itself. A PPTX project stays within its bound slide master. Batches
-  hold up to 500 commands, 1 MB and 10 attached files; `run_commands`
-  answers are cut at 50 KB.
+- **Commands:** OfficeCLI validates the batch itself; its batch verbs work
+  inside the document, never on files. A PPTX project's slides and
+  placeholders stay within its bound slide master. Batches hold up to 500
+  commands, 1 MB and 10 attached files; `run_commands` answers are cut at
+  50 KB.
 - **Files:** uploads and documents stop past 100 MB, images past 20 MB;
   macro and template variants are refused.
 - **Drafts:** projects are Valkey hashes with a TTL, edited under a

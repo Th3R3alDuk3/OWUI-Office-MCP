@@ -84,7 +84,7 @@ async def prepare_templates() -> None:
                     document=await to_thread(document.read_bytes),
                     inventory=await module.inventory(document),
                 )
-        except Exception as error:  # noqa: BLE001
+        except Exception as error:
             logger.warning("template %s skipped: %s", source.name, error)
 
 

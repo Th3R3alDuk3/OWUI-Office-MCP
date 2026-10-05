@@ -259,9 +259,9 @@ async def get_reference(
     description=(
         "Apply one atomic batch of OfficeCLI commands: if one fails, nothing is "
         "applied and its error comes back with the command index. Each command "
-        "names its verb in `command`; any verb works except file-level ones, "
-        "and reads (get, query, view, validate, raw) return their output in "
-        "`results`. Send a whole step as one batch, not command by command."
+        "names its verb in `command` as in an OfficeCLI batch; reads (get, "
+        "query, view, validate, raw) return their output in `results`. Send a "
+        "whole step as one batch, not command by command."
     ),
     annotations=ToolAnnotations(destructive_hint=True, open_world_hint=True),
 )
