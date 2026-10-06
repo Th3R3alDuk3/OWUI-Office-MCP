@@ -1,6 +1,5 @@
 import re
 from pathlib import Path
-from posixpath import basename, dirname, join, normpath
 from xml.etree import ElementTree
 
 from fastmcp.exceptions import ToolError
@@ -17,12 +16,12 @@ START_HINT = """
 Bound to the slide master in `inventory.slide_masters`: use its layouts and
 slots only. Check the result with `view outline` or `preview_project`, text
 overflow with `view issues`. Add a slide with `add` type `slide`, `parent` `/`
-and the prop `layout` = the layout's `index`, but not the props `title` or
-`text`: those ignore the layout's positions. Placeholders, speaker notes and
-comments take the slide's
-path, e.g. `/slide[1]`, as `parent`: fill a slot with `add` type `placeholder`
-and the props `phType` and `idx` from `slots`, notes with type `notes` and the
-prop `text`, comments with type `comment` and the props `text` and `author`.
+and the prop `layout` = the layout's `index`; the props `title` and `text`
+fill its title and first body slot. Other placeholders, speaker notes and
+comments take the slide's path, e.g. `/slide[1]`, as `parent`: fill a slot
+with `add` type `placeholder` and the props `phType` and `idx` from `slots`,
+notes with type `notes` and the prop `text`, comments with type `comment` and
+the props `text` and `author`.
 Change an existing placeholder with `set` on its path from `query placeholder`.
 A line break in `text` starts a new paragraph. Charts take `chartType`,
 `categories` "Q1,Q2" and `data` "Revenue:1,2;Costs:3,4"; tables `data`
@@ -42,13 +41,13 @@ _POSITION = ("x", "y", "width", "height")
 DECK = {"command": "get", "path": "/", "depth": 2}
 
 _PRESENTATION = "/ppt/presentation.xml"
+_PRESENTATION_RELS = "/ppt/_rels/presentation.xml.rels"
 _NAMESPACES = {
     "p": "http://schemas.openxmlformats.org/presentationml/2006/main",
     "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
 }
 _RELATIONSHIP_ID = f"{{{_NAMESPACES['r']}}}id"
 _MASTER_IDS = "p:sldMasterIdLst/p:sldMasterId"
-_LAYOUT_IDS = "p:sldLayoutIdLst/p:sldLayoutId"
 
 _SLIDE_PATH = re.compile(r"/slide\[\d+\]", re.IGNORECASE)
 
@@ -78,38 +77,6 @@ async def prepare(
         await run_batch(file, commands)
 
 
-def _rels(
-    part: str,
-) -> str:
-
-    return f"{dirname(part)}/_rels/{basename(part)}.rels"
-
-
-def _relationships(
-    xml: str,
-    kind: str,
-) -> dict[str, str]:
-
-    # File order is the order of OfficeCLI's paths.
-    return {
-        link.attrib["Id"]: link.attrib["Target"]
-        for link in ElementTree.fromstring(xml)
-        if link.attrib["Type"].endswith(f"/{kind}")
-    }
-
-
-def _id_list(
-    xml: str,
-    path: str,
-) -> list[str]:
-
-    # ID-list order is the order of OfficeCLI's `layout` numbers.
-    return [
-        node.attrib[_RELATIONSHIP_ID]
-        for node in ElementTree.fromstring(xml).iterfind(path, _NAMESPACES)
-    ]
-
-
 def _slots(
     shapes: list[dict],
 ) -> dict[str, dict[str, str]]:
@@ -131,41 +98,47 @@ async def inventory(
     file: Path,
 ) -> PptxInventory:
 
-    root, masters, presentation, presentation_rels = await run_batch(file, [
+    root, masters, presentation, relationships = await run_batch(file, [
         {"command": "get", "path": "/", "depth": 0},
         {"command": "query", "selector": "slidemaster"},
         {"command": "raw", "part": _PRESENTATION},
-        {"command": "raw", "part": _rels(_PRESENTATION)},
+        {"command": "raw", "part": _PRESENTATION_RELS},
     ])
-    master_targets = _relationships(presentation_rels["output"], "slideMaster")
-    masters_by_id = dict(
-        zip(master_targets, masters["output"]["results"], strict=True),
-    )
-    master_ids = _id_list(presentation["output"], _MASTER_IDS)
+    # OfficeCLI numbers `/slidemaster[M]` in relationship order, but counts
+    # `layout` through the masters in PowerPoint's order (sldMasterIdLst).
+    masters_by_id = dict(zip(
+        (
+            link.attrib["Id"]
+            for link in ElementTree.fromstring(relationships["output"])
+            if link.attrib["Type"].endswith("/slideMaster")
+        ),
+        masters["output"]["results"],
+        strict=True,
+    ))
+    master_ids = [
+        node.attrib[_RELATIONSHIP_ID]
+        for node in ElementTree.fromstring(presentation["output"])
+        .iterfind(_MASTER_IDS, _NAMESPACES)
+    ]
     listed: list[SlideMaster] = []
-    # OfficeCLI counts layouts across all masters.
     layout_index = 0
 
     for master_index, master_id in enumerate(master_ids, start=1):
 
         master = masters_by_id[master_id]
-        part = normpath(join(dirname(_PRESENTATION), master_targets[master_id]))
-        paths = [
-            f"{master['path']}/slidelayout[{position}]"
+        # Within a master, paths and `layout` count alike.
+        details = await run_batch(file, [
+            {
+                "command": "get", "depth": 2,
+                "path": f"{master['path']}/slidelayout[{position}]",
+            }
             for position in range(1, master["format"]["layoutCount"] + 1)
-        ]
-        master_xml, master_rels, *details = await run_batch(file, [
-            {"command": "raw", "part": part},
-            {"command": "raw", "part": _rels(part)},
-            *({"command": "get", "path": path, "depth": 2} for path in paths),
         ])
-        layout_targets = _relationships(master_rels["output"], "slideLayout")
-        layouts_by_id = dict(zip(layout_targets, details, strict=True))
         layouts: list[Layout] = []
 
-        for layout_id in _id_list(master_xml["output"], _LAYOUT_IDS):
+        for detail in details:
             layout_index += 1
-            layout = layouts_by_id[layout_id]["output"]["results"][0]
+            layout = detail["output"]["results"][0]
             layouts.append(Layout(
                 index=layout_index,
                 name=layout["format"].get("name", ""),

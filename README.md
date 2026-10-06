@@ -98,9 +98,8 @@ index.
 {
   "project_id": "3f9a1c2e5b7d9f01",
   "commands": [
-    {"command": "add", "parent": "/", "type": "slide", "props": {"layout": "3"}},
-    {"command": "add", "parent": "/slide[1]", "type": "placeholder",
-     "props": {"phType": "title", "text": "Revenue 2026"}},
+    {"command": "add", "parent": "/", "type": "slide",
+     "props": {"layout": "3", "title": "Revenue 2026"}},
     {"command": "add", "parent": "/slide[1]", "type": "chart",
      "props": {"chartType": "bar", "categories": "Q1,Q2,Q3", "data": "Revenue:215,250,280"}}
   ]
