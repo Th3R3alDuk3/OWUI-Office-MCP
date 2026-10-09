@@ -8,6 +8,8 @@ services:
       dockerfile: docker/Dockerfile.app
     container_name: owui-office-mcp
     restart: unless-stopped
+    # Reaps the Chromium processes OfficeCLI orphans on screenshots.
+    init: true
     ports:
       - "8000:8000"
     env_file: .env
