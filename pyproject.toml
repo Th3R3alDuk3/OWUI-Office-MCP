@@ -1,6 +1,6 @@
 [project]
 name = "owui-office-mcp"
-version = "0.7.5"
+version = "0.7.6"
 description = "Office document MCP server for OpenWebUI."
 readme = "README.md"
 license = "MIT"

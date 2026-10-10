@@ -12,27 +12,29 @@ MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentatio
 INVENTORY = PptxInventory
 
 
-START_HINT = """
-Bound to the slide master in `inventory.slide_masters`: use its layouts and
-slots only. Check the result with `view outline` or `preview_project`, text
-overflow with `view issues`. Add a slide with `add` type `slide`, `parent` `/`
-and the prop `layout` = the layout's `index`; the props `title` and `text`
-fill its title and first body slot. Other placeholders, speaker notes and
-comments take the slide's path, e.g. `/slide[1]`, as `parent`: fill a slot
-with `add` type `placeholder` and the props `phType` and `idx` from `slots`,
-notes with type `notes` and the prop `text`, comments with type `comment` and
-the props `text` and `author`.
-Change an existing placeholder with `set` on its path from `query placeholder`.
-A line break in `text` starts a new paragraph. Charts take `chartType`,
-`categories` "Q1,Q2" and `data` "Revenue:1,2;Costs:3,4"; tables `data`
-"H1,H2;r1c1,r1c2"; images come from attached files as `image` (placeholder) or
-`src` (picture) "file:<file_id>"; free elements need `x`, `y`, `width` and
-`height` with units, e.g. `100pt`, within `inventory.slide_size` or at a slot's
-position from `slots`: OfficeCLI's defaults ignore the slide size. Paths are
-1-based, `index` in add/move is 0-based. Change colors and fonts only when the
-user asks or text would be unreadable, then with theme colors such as `light1`
-or `accent1`. `get_reference` documents elements and props.
-""".strip()
+START_HINT = (
+    "Bound to the slide master in `inventory.slide_masters`: use its layouts "
+    "and slots only. Check the result with `view outline` or "
+    "`preview_project`, text overflow with `view issues`. Add a slide with "
+    "`add` type `slide`, `parent` `/` and the prop `layout` = the layout's "
+    "`index`; the props `title` and `text` fill its title and first body "
+    "slot. Other placeholders, speaker notes and comments take the slide's "
+    "path, e.g. `/slide[1]`, as `parent`: fill a slot with `add` type "
+    "`placeholder` and the props `phType` and `idx` from `slots`, notes with "
+    "type `notes` and the prop `text`, comments with type `comment` and the "
+    "props `text` and `author`. Change an existing placeholder with `set` on "
+    "its path from `query placeholder`. A line break in `text` starts a new "
+    "paragraph. Charts take `chartType` (`column` is vertical, `bar` "
+    "horizontal), `categories` \"Q1,Q2\" and `data` \"Revenue:1,2;Costs:3,4\"; "
+    "tables `data` \"H1,H2;r1c1,r1c2\"; images come from attached files as "
+    "`image` (placeholder) or `src` (picture) \"file:<file_id>\"; free elements "
+    "need `x`, `y`, `width` and `height` with units, e.g. `100pt`, within "
+    "`inventory.slide_size` or at a slot's position from `slots`: OfficeCLI's "
+    "defaults ignore the slide size. Paths are 1-based, `index` in add/move "
+    "is 0-based. Change colors and fonts only when the user asks or text "
+    "would be unreadable, then with theme colors such as `light1` or "
+    "`accent1`. `get_reference` documents elements and props."
+)
 
 # Slots the master fills itself.
 _FIXED_SLOTS = {"date", "footer", "header", "slidenum"}

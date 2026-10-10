@@ -24,7 +24,7 @@ _LANDRUN = "/usr/local/bin/landrun"
 _OFFICECLI = "/usr/local/bin/officecli"
 
 # landlock_create_ruleset(NULL, 0, LANDLOCK_CREATE_RULESET_VERSION) answers the ABI.
-LANDLOCK_ABI = CDLL(None, use_errno=True).syscall(444, None, 0, 1)
+LANDLOCK_ABI = CDLL(None).syscall(444, None, 0, 1)
 
 _ENVIRONMENT = {
     "PATH": "/usr/bin:/bin",
@@ -189,6 +189,9 @@ async def screenshot(
         ])
         count = len(slides["output"]["results"])
         target = ("--grid", str(ceil(sqrt(count)) or 1))
+    elif file.suffix == ".docx":
+        # OfficeCLI's one-column sheet clips a docx page; two columns show it whole.
+        target = ("--grid", "2")
     else:
         target = ("--grid",)
 

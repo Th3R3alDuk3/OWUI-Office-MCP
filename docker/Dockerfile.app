@@ -1,10 +1,11 @@
 FROM ghcr.io/astral-sh/uv:python3.13-trixie-slim
 
 # OfficeCLI screenshots need a `chromium`; Landlock denies /dev/shm. The fonts
-# are metric-compatible with Office's, so line breaks match.
+# are metric-compatible with Office's, so line breaks match. tini reaps the
+# helper processes Chromium leaves behind.
 RUN apt-get update \
  && apt-get install --yes --no-install-recommends \
-    chromium-headless-shell fonts-liberation fonts-crosextra-carlito \
+    tini chromium-headless-shell fonts-liberation fonts-crosextra-carlito \
     fonts-crosextra-caladea \
  && rm -rf /var/lib/apt/lists/* \
  && printf '#!/bin/sh\nexec /usr/lib/chromium/chromium-headless-shell --disable-dev-shm-usage "$@"\n' \
@@ -34,4 +35,5 @@ ENV PATH="/app/.venv/bin:$PATH" \
 RUN useradd --system --uid 1000 app
 USER app
 
+ENTRYPOINT ["tini", "--"]
 CMD ["python", "main.py"]

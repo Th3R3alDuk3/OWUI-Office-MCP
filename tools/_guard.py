@@ -6,7 +6,7 @@ from fastmcp.exceptions import ToolError
 
 from models.office import Command
 
-_SOURCE_PROPS = {"src", "image"}
+_SOURCE_PROPS = {"src", "path", "image"}
 _FILE_REFERENCE = re.compile(r"file:[A-Za-z0-9-]{1,64}")
 
 _MAX_BATCH_BYTES = 2**20

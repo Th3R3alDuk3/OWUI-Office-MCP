@@ -228,7 +228,7 @@ async def start_project(
 @tool(
     name="get_reference",
     description=(
-        "Look up the OfficeCLI reference of a format: an element (e.g. "
+        "Look up the OfficeCLI reference (its `help`) of a format: an element (e.g. "
         "`chart`, `placeholder`, `table`), a verb (e.g. `add`) or both (e.g. "
         "`add picture`). An element's reference lists its paths, props and "
         "aliases."
@@ -407,7 +407,7 @@ async def export_project(
             )
         except RuntimeError as error:
             raise ToolError(
-                "Could not upload the file to OpenWebUI. Retry in a moment."
+                f"{error} Try once more, then tell the user."
             ) from error
 
     return ExportResult(
