@@ -189,9 +189,6 @@ async def screenshot(
         ])
         count = len(slides["output"]["results"])
         target = ("--grid", str(ceil(sqrt(count)) or 1))
-    elif file.suffix == ".docx":
-        # OfficeCLI's one-column sheet clips a docx page; two columns show it whole.
-        target = ("--grid", "2")
     else:
         target = ("--grid",)
 

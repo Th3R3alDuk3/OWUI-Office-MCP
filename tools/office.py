@@ -11,8 +11,8 @@ from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AccessToken
 from fastmcp.tools import ToolResult, tool
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.types import File, Image
-from mcp.types import TextContent, ToolAnnotations
+from fastmcp.utilities.types import Image
+from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from config import get_settings
@@ -312,15 +312,9 @@ async def run_commands(
     description=(
         "Render the project as an image: the whole document as thumbnails, or "
         "one slide (PPTX) or page (DOCX) in full size; XLSX shows the first "
-        "sheet. "
-        + (
-            "Check it for overflowing or overlapping content, empty "
-            "placeholders and broken layouts. Use it after building or larger "
-            "edits, not after every change."
-            if _settings.preview_to_model else
-            "The image is shown to the user, not to you; use it when the user "
-            "wants to see the state, then ask what to change."
-        )
+        "sheet. Check it for overflowing or overlapping content, empty "
+        "placeholders and broken layouts. Use it after building or larger "
+        "edits, not after every change."
     ),
     annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
 )
@@ -345,28 +339,15 @@ async def preview_project(
 
     subject = f"Page {page}" if page else "The whole document"
 
-    # OpenWebUI shows image content to the user, image resources to the model.
+    # OpenWebUI shows image content to the user and passes it to the model.
     return ToolResult(content=[
-        TextContent(
-            type="text",
-            text=(
-                f"{subject} is attached as an image and shown to the user. "
-                "It approximates Office's rendering: judge layout, overflow "
-                "and missing or unreadable content, not exact colors or pixel "
-                "details. Fix what is wrong with `run_commands`, then call "
-                "`export_project`."
-                if _settings.preview_to_model else
-                f"{subject} is shown to the user as an image. Ask the user "
-                "what to change, fix it with `run_commands`, then call "
-                "`export_project`."
-            ),
+        (
+            f"{subject} is attached as an image and shown to the user. It "
+            "approximates Office's rendering: judge layout, overflow and "
+            "missing or unreadable content, not exact colors or pixel details. "
+            "Fix what is wrong with `run_commands`, then call `export_project`."
         ),
-        *(
-            [File(data=image, name=f"page-{page or 'all'}.png").to_resource_content(
-                mime_type="image/png",
-            )] if _settings.preview_to_model else []
-        ),
-        Image(data=image).to_image_content(),
+        Image(data=image),
     ])
 
 

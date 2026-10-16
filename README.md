@@ -29,7 +29,6 @@ Linux 6.7 or newer.
      `OWUI_PUBLIC_URL` if users reach it under another one.
    - `OWUI_VERIFY_TLS`: keep `true`; `false` only for self-signed
      certificates or plain HTTP.
-   - `PREVIEW_TO_MODEL`: `false` for models without vision.
 
 2. Fetch the pinned OfficeCLI and landrun, then start the stack:
 
@@ -42,9 +41,13 @@ Linux 6.7 or newer.
    [Valkey Admin](https://github.com/valkey-io/valkey-admin) on
    `http://127.0.0.1:8080` shows the drafts.
 
-3. Connect OpenWebUI: add an **MCP** tool server at `http://<host>:8000/mcp`
-   with auth **Session**, and set the model's **Function Calling** to
-   **Native**.
+3. Connect OpenWebUI 0.12 or newer: add an **MCP** tool server at
+   `http://<host>:8000/mcp` with auth **Session**, assign it to models with
+   vision only (previews reach the model as images), and set their
+   **Function Calling** to **Native**. If OpenWebUI sets
+   `AIOHTTP_CLIENT_TIMEOUT_TOOL_SERVER` or `AIOHTTP_CLIENT_TIMEOUT`, keep it
+   at 600 s or more, or a long edit is reported as failed although it
+   applied.
 
 Requests need a JWT signed with `JWT_SECRET` that names the user in the `id`
 claim. Use a TLS reverse proxy outside a trusted network.
