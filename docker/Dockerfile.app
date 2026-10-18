@@ -5,8 +5,8 @@ FROM ghcr.io/astral-sh/uv:python3.13-trixie-slim
 # batch killed on timeout leaves behind.
 RUN apt-get update \
  && apt-get install --yes --no-install-recommends \
-    tini chromium-headless-shell fonts-liberation fonts-crosextra-carlito \
-    fonts-crosextra-caladea \
+    tini chromium-headless-shell \
+    fonts-liberation fonts-crosextra-carlito fonts-crosextra-caladea \
  && rm -rf /var/lib/apt/lists/* \
  && printf '#!/bin/sh\nexec /usr/lib/chromium/chromium-headless-shell --disable-dev-shm-usage "$@"\n' \
     > /usr/bin/chromium \
@@ -27,10 +27,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # The binaries already sit in /usr/local/bin.
 COPY --exclude=bin . .
 
-# Plain log lines, no banner: the container's stdout is the log.
+# Plain log lines: the container's stdout is the log.
 ENV PATH="/app/.venv/bin:$PATH" \
-    FASTMCP_ENABLE_RICH_LOGGING=false \
-    FASTMCP_SHOW_SERVER_BANNER=false
+    FASTMCP_ENABLE_RICH_LOGGING=false
 
 RUN useradd --system --uid 1000 app
 USER app

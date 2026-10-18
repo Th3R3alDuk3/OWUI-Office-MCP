@@ -2,6 +2,7 @@
 
 [![App image](https://github.com/Th3R3alDuk3/OWUI-Office-MCP/actions/workflows/app.yml/badge.svg)](https://github.com/Th3R3alDuk3/OWUI-Office-MCP/actions/workflows/app.yml)
 [![Python](https://img.shields.io/badge/python-3.13%2B-blue)](pyproject.toml)
+[![OpenWebUI](https://img.shields.io/badge/OpenWebUI-%E2%89%A5%200.12.0-blue)](https://github.com/open-webui/open-webui)
 [![License](https://img.shields.io/github/license/Th3R3alDuk3/OWUI-Office-MCP)](LICENSE)
 
 > Office documents for OpenWebUI via MCP.

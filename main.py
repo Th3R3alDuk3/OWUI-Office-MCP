@@ -12,7 +12,13 @@ settings = get_settings()
 
 INSTRUCTIONS = (
     "Creates and edits PowerPoint, Word and Excel files from a stored template "
-    "or an attached file, faithful to its design."
+    "or an attached file, faithful to its design. Workflow: `list_templates` "
+    "unless the user attached a file, `start_project`, `run_commands` in few "
+    "batches of whole steps, `preview_project` after building, "
+    "`export_project` once at the end. Every tool result stays in the "
+    "conversation, so read narrowly: `view` (outline, text, issues) for an "
+    "overview, `get` on one path with a small `depth`, `query` with a narrow "
+    "selector, `get_reference` only for props the hints leave open."
 )
 
 MAX_RESPONSE_BYTES = 50_000
@@ -57,4 +63,5 @@ if __name__ == "__main__":
         transport="http",
         # Projects are keyed on the JWT user, never on an MCP session.
         stateless_http=True,
+        show_banner=False,
     )
