@@ -1,6 +1,5 @@
 import re
 from pathlib import Path
-from xml.etree import ElementTree
 
 from fastmcp.exceptions import ToolError
 
@@ -32,7 +31,7 @@ START_HINT = (
     "`image` (placeholder) or `src` (picture) \"file:<file_id>\"; free elements "
     "need `x`, `y`, `width` and `height` with units, e.g. `100pt`, within "
     "`inventory.slide_size` or at a slot's position from `slots`: OfficeCLI's "
-    "defaults ignore the slide size. Paths are 1-based, `index` in add/move "
+    "defaults can overflow the slide. Paths are 1-based, `index` in add/move "
     "is 0-based. Change colors and fonts only when the user asks or text "
     "would be unreadable, then with theme colors such as `light1` or "
     "`accent1`; chart text takes `title.color` \"light1\", `axisfont` and "
@@ -46,13 +45,6 @@ _POSITION = ("x", "y", "width", "height")
 DECK = {"command": "get", "path": "/", "depth": 2}
 
 _PRESENTATION = "/ppt/presentation.xml"
-_PRESENTATION_RELS = "/ppt/_rels/presentation.xml.rels"
-_NAMESPACES = {
-    "p": "http://schemas.openxmlformats.org/presentationml/2006/main",
-    "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
-}
-_RELATIONSHIP_ID = f"{{{_NAMESPACES['r']}}}id"
-_MASTER_IDS = "p:sldMasterIdLst/p:sldMasterId"
 
 _SLIDE_PATH = re.compile(r"/slide\[\d+\]", re.IGNORECASE)
 
@@ -103,35 +95,16 @@ async def inventory(
     file: Path,
 ) -> PptxInventory:
 
-    root, masters, presentation, relationships = await run_batch(file, [
+    root, masters = await run_batch(file, [
         {"command": "get", "path": "/", "depth": 0},
         {"command": "query", "selector": "slidemaster"},
-        {"command": "raw", "part": _PRESENTATION},
-        {"command": "raw", "part": _PRESENTATION_RELS},
     ])
-    # OfficeCLI numbers `/slidemaster[M]` in relationship order, but counts
-    # `layout` through the masters in PowerPoint's order (sldMasterIdLst).
-    masters_by_id = dict(zip(
-        (
-            link.attrib["Id"]
-            for link in ElementTree.fromstring(relationships["output"])
-            if link.attrib["Type"].endswith("/slideMaster")
-        ),
-        masters["output"]["results"],
-        strict=True,
-    ))
-    master_ids = [
-        node.attrib[_RELATIONSHIP_ID]
-        for node in ElementTree.fromstring(presentation["output"])
-        .iterfind(_MASTER_IDS, _NAMESPACES)
-    ]
     listed: list[SlideMaster] = []
     layout_index = 0
 
-    for master_index, master_id in enumerate(master_ids, start=1):
+    for master_index, master in enumerate(masters["output"]["results"], start=1):
 
-        master = masters_by_id[master_id]
-        # Within a master, paths and `layout` count alike.
+        # Paths and `layout` count alike, in PowerPoint's order.
         details = await run_batch(file, [
             {
                 "command": "get", "depth": 2,
