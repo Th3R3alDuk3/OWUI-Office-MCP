@@ -21,7 +21,7 @@ services:
       - valkey
 
   valkey:
-    image: valkey/valkey:9.1.2-alpine
+    image: valkey/valkey:9.1.3-alpine
     container_name: valkey
     restart: unless-stopped
     # Drafts: bounded, LRU-evicted, nothing on disk.

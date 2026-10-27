@@ -62,7 +62,7 @@ on the `PATH`:
 
 ```bash
 bin/download.sh && sudo install -m 755 bin/officecli bin/landrun /usr/local/bin/
-docker run -d -p 6379:6379 valkey/valkey:9.1.2-alpine
+docker run -d -p 6379:6379 valkey/valkey:9.1.3-alpine
 uv sync
 uv run python main.py
 ```
@@ -143,6 +143,9 @@ user, OfficeCLI processes, memory and timeouts, and the project TTL.
   50 KB.
 - **Files:** uploads and documents stop past 100 MB, images past 20 MB;
   macro and template variants are refused.
+- **Images:** libvips decodes attached images in the server process, with
+  its unfuzzed loaders blocked. Except for animations, they lose their EXIF,
+  XMP and IPTC metadata, and those past 1 MB are scaled to 2560 px.
 - **Drafts:** projects are Valkey hashes with a TTL, edited under a
   per-project lock and written back only when the whole batch succeeded.
   Valkey runs bounded and keeps nothing on disk; give it a password in
@@ -161,6 +164,7 @@ user, OfficeCLI processes, memory and timeouts, and the project TTL.
 - [`models/office.py`](models/office.py) - the command shape, inventories and results
 - [`services/owui.py`](services/owui.py) - OpenWebUI downloads and uploads
 - [`services/officecli.py`](services/officecli.py) - OfficeCLI runs under landrun
+- [`services/image.py`](services/image.py) - attached images: shrunk and stripped of metadata
 - [`services/pptx.py`](services/pptx.py), [`docx.py`](services/docx.py), [`xlsx.py`](services/xlsx.py) - one module per format: preparation and inventory; pptx also the slide master binding
 - [`services/project.py`](services/project.py) - Valkey project store, locks, templates, lifespan
 - [`tools/`](tools/) - the six MCP tools and the command guard

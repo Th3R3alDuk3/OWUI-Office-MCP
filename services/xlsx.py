@@ -6,6 +6,8 @@ from services.officecli import run_batch
 FORMAT = "xlsx"
 MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 INVENTORY = XlsxInventory
+# OfficeCLI has no compact xlsx query; `view text` is its compact form.
+COMPACT_QUERY = False
 
 
 START_HINT = (

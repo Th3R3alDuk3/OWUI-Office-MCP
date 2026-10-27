@@ -19,6 +19,7 @@ from valkey.exceptions import LockError
 from config import get_settings
 from models.office import AnyInventory, PptxInventory
 from services import docx, pptx, xlsx
+from services.image import shrink_image
 from services.officecli import LANDLOCK_ABI, READ_COMMANDS, run_batch
 from services.owui import download_file
 
@@ -264,9 +265,14 @@ async def add_asset(
             "(PNG, JPEG, GIF, BMP, TIFF, WebP)."
         )
 
+    suffix = guess_extension(content_type)
+
+    if shrunk := await to_thread(shrink_image, data):
+        data, suffix = shrunk
+
     assets = project.document.parent / "assets"
     assets.mkdir(exist_ok=True)
-    name = f"{file_id}{guess_extension(content_type)}"
+    name = f"{file_id}{suffix}"
     await to_thread((assets / name).write_bytes, data)
 
     return f"assets/{name}"

@@ -13,7 +13,7 @@ from fastmcp.tools import ToolResult, tool
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import Image
 from mcp.types import ToolAnnotations
-from pydantic import Field
+from pydantic import Field, JsonValue
 
 from config import get_settings
 from models.office import (
@@ -74,6 +74,23 @@ async def _admitted(
 
         if not _active[user_id]:
             del _active[user_id]
+
+
+def _strip_src_keys(
+    value: JsonValue,
+) -> JsonValue:
+
+    # Where an `effective.*` value is inherited from; doubles a read.
+    if isinstance(value, dict):
+        return {
+            key: _strip_src_keys(item)
+            for key, item in value.items() if not key.endswith(".src")
+        }
+
+    if isinstance(value, list):
+        return [_strip_src_keys(item) for item in value]
+
+    return value
 
 
 @tool(
@@ -292,6 +309,11 @@ async def run_commands(
             commands,
             fetch=partial(add_asset, project, token=token.token),
         )
+        # Queries answer in lines unless the model asks for the JSON tree.
+        if project.module.COMPACT_QUERY:
+            for command in batch:
+                if command["command"] == "query":
+                    command.setdefault("compact", True)
         results = await apply_batch(project, batch)
 
     return CommandsResult(
@@ -299,7 +321,7 @@ async def run_commands(
             "Continue; once the user's request is fully applied, call "
             "`export_project` once."
         ),
-        results=[result.get("output") for result in results],
+        results=[_strip_src_keys(result.get("output")) for result in results],
         warnings=[
             f"Command {result['index']}: {warning['message']}"
             for result in results for warning in result.get("warnings", [])

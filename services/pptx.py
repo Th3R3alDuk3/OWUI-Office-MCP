@@ -9,6 +9,7 @@ from services.officecli import run_batch
 FORMAT = "pptx"
 MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 INVENTORY = PptxInventory
+COMPACT_QUERY = True
 
 
 START_HINT = (
@@ -35,7 +36,11 @@ START_HINT = (
     "is 0-based. Change colors and fonts only when the user asks or text "
     "would be unreadable, then with theme colors such as `light1` or "
     "`accent1`; chart text takes `title.color` \"light1\", `axisfont` and "
-    "`legendFont` \"12:light1\". `get_reference` documents elements and props."
+    "`legendFont` \"12:light1\". A `query` answers one line per match with "
+    "shortened text; its `fields` add `get`'s format keys, e.g. "
+    "\"x,y,width,height\" or \"color\" (\"effective.color\" if inherited), "
+    "and `\"compact\": false` gives the JSON tree. `get_reference` documents "
+    "elements and props."
 )
 
 # Slots the master fills itself.

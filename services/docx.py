@@ -9,6 +9,7 @@ from services.officecli import run_batch
 FORMAT = "docx"
 MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 INVENTORY = DocxInventory
+COMPACT_QUERY = True
 
 
 START_HINT = (
@@ -24,7 +25,10 @@ START_HINT = (
     "with the props `text` and `author` and the paragraph's path, e.g. "
     "`/body/p[1]`, as `parent`. Change colors and fonts only when the user "
     "asks or text would be unreadable, then with theme colors such as "
-    "`accent1`. `get_reference` documents elements and props."
+    "`accent1`. A `query` answers one line per match with shortened text; its "
+    "`fields` add `get`'s format keys, e.g. \"style,effective.size\", and "
+    "`\"compact\": false` gives the JSON tree. `get_reference` documents "
+    "elements and props."
 )
 
 _NAMESPACE = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}

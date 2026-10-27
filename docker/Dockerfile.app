@@ -31,6 +31,9 @@ COPY --exclude=bin . .
 ENV PATH="/app/.venv/bin:$PATH" \
     FASTMCP_ENABLE_RICH_LOGGING=false
 
+# libvips would otherwise start a thread per host core.
+ENV VIPS_CONCURRENCY=1
+
 RUN useradd --system --uid 1000 app
 USER app
 
