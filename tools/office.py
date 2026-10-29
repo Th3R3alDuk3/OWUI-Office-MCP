@@ -76,23 +76,6 @@ async def _admitted(
             del _active[user_id]
 
 
-def _strip_src_keys(
-    value: JsonValue,
-) -> JsonValue:
-
-    # Where an `effective.*` value is inherited from; doubles a read.
-    if isinstance(value, dict):
-        return {
-            key: _strip_src_keys(item)
-            for key, item in value.items() if not key.endswith(".src")
-        }
-
-    if isinstance(value, list):
-        return [_strip_src_keys(item) for item in value]
-
-    return value
-
-
 @tool(
     name="list_templates",
     description=(
@@ -245,10 +228,10 @@ async def start_project(
 @tool(
     name="get_reference",
     description=(
-        "Look up the OfficeCLI reference (its `help`) of a format: an element (e.g. "
-        "`chart`, `placeholder`, `table`), a verb (e.g. `add`) or both (e.g. "
-        "`add picture`). An element's reference lists its paths, props and "
-        "aliases."
+        "Look up the OfficeCLI reference (its `help`) of a format: an "
+        "element (e.g. `chart`, `placeholder`, `table`), a verb (e.g. `add`) "
+        "or both (e.g. `add picture`). An element's reference lists its "
+        "paths, props and aliases."
     ),
     annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
 )
@@ -270,6 +253,23 @@ async def get_reference(
         hint="Use the props as documented.",
         reference=reference,
     )
+
+
+def _strip_src_keys(
+    value: JsonValue,
+) -> JsonValue:
+
+    # Where an `effective.*` value is inherited from; doubles a read.
+    if isinstance(value, dict):
+        return {
+            key: _strip_src_keys(item)
+            for key, item in value.items() if not key.endswith(".src")
+        }
+
+    if isinstance(value, list):
+        return [_strip_src_keys(item) for item in value]
+
+    return value
 
 
 @tool(
@@ -361,12 +361,13 @@ async def preview_project(
 
     subject = f"Page {page}" if page else "The whole document"
 
-    # OpenWebUI shows image content to the user and passes it to the model.
+    # OpenWebUI shows the image to the user and, with Vision on, the model.
     return ToolResult(content=[
         (
             f"{subject} is attached as an image and shown to the user. It "
             "approximates Office's rendering: judge layout, overflow and "
             "missing or unreadable content, not exact colors or pixel details. "
+            "If you cannot see the image, check with `view issues` instead. "
             "Fix what is wrong with `run_commands`, then call `export_project`."
         ),
         Image(data=image),

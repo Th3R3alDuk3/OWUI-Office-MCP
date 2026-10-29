@@ -43,11 +43,12 @@ START_HINT = (
     "elements and props."
 )
 
+# Appended to every edit batch, so the check needs no run of its own.
+DECK = {"command": "get", "path": "/", "depth": 2}
+
 # Slots the master fills itself.
 _FIXED_SLOTS = {"date", "footer", "header", "slidenum"}
 _POSITION = ("x", "y", "width", "height")
-# Appended to every edit batch, so the check needs no run of its own.
-DECK = {"command": "get", "path": "/", "depth": 2}
 
 _PRESENTATION = "/ppt/presentation.xml"
 

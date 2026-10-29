@@ -2,7 +2,7 @@
 
 [![App image](https://github.com/Th3R3alDuk3/OWUI-Office-MCP/actions/workflows/app.yml/badge.svg)](https://github.com/Th3R3alDuk3/OWUI-Office-MCP/actions/workflows/app.yml)
 [![Python](https://img.shields.io/badge/python-3.13%2B-blue)](pyproject.toml)
-[![OpenWebUI](https://img.shields.io/badge/OpenWebUI-%E2%89%A5%200.12.0-blue)](https://github.com/open-webui/open-webui)
+[![OpenWebUI](https://img.shields.io/badge/OpenWebUI-%E2%89%A5%200.12.5-blue)](https://github.com/open-webui/open-webui)
 [![License](https://img.shields.io/github/license/Th3R3alDuk3/OWUI-Office-MCP)](LICENSE)
 
 > Office documents for OpenWebUI via MCP.
@@ -42,10 +42,11 @@ Linux 6.7 or newer.
    [Valkey Admin](https://github.com/valkey-io/valkey-admin) on
    `http://127.0.0.1:8080` shows the drafts.
 
-3. Connect OpenWebUI 0.12 or newer: add an **MCP** tool server at
-   `http://<host>:8000/mcp` with auth **Session**, assign it to models with
-   vision only (previews reach the model as images), and set their
-   **Function Calling** to **Native**. If OpenWebUI sets
+3. Connect OpenWebUI 0.12.5 or newer: add an **MCP** tool server at
+   `http://<host>:8000/mcp` with auth **Session**, assign it to models and
+   set their **Function Calling** to **Native**. Previews reach the model as
+   images; turn **Vision** off for text-only models, which then get an
+   `[image]` note instead. If OpenWebUI sets
    `AIOHTTP_CLIENT_TIMEOUT_TOOL_SERVER` or `AIOHTTP_CLIENT_TIMEOUT`, keep it
    at 600 s or more, or a long edit is reported as failed although it
    applied.

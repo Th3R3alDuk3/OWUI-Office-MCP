@@ -1,4 +1,4 @@
-from pyvips import Error, Image, block_untrusted_set
+from pyvips import Error, ForeignKeep, Image, block_untrusted_set
 
 # Uploads are untrusted: fuzzed loaders only.
 block_untrusted_set(True)
@@ -36,16 +36,16 @@ def shrink_image(
             return None
 
         image = Image.thumbnail_buffer(
-            data, _MAX_EDGE, size="down", export_profile="srgb",
+            data, _MAX_EDGE, size="down", output_profile="srgb",
         )
 
         # Photos stay JPEG; the rest may need transparency or sharp edges.
         if jpeg:
             output = image.jpegsave_buffer(
-                Q=85, optimize_coding=True, keep="none",
+                Q=85, optimize_coding=True, keep=ForeignKeep.NONE,
             )
         else:
-            output = image.pngsave_buffer(compression=9, keep="none")
+            output = image.pngsave_buffer(compression=9, keep=ForeignKeep.NONE)
 
     except Error:
         return None

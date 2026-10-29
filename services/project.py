@@ -67,7 +67,7 @@ _valkey = Valkey.from_url(_settings.valkey_url)
 templates: dict[str, StoredTemplate] = {}
 
 
-async def prepare_templates() -> None:
+async def _prepare_templates() -> None:
 
     for source in sorted(_TEMPLATES.iterdir()):
 
@@ -313,7 +313,7 @@ async def project_lifespan(
 
     try:
         await _valkey.ping()
-        await prepare_templates()
+        await _prepare_templates()
         yield
     finally:
         await _valkey.aclose()
