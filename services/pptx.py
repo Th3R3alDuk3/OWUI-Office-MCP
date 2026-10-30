@@ -11,7 +11,6 @@ MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentatio
 INVENTORY = PptxInventory
 COMPACT_QUERY = True
 
-
 START_HINT = (
     "Bound to the slide master in `inventory.slide_masters`: use its layouts "
     "and slots only. Check the result with `view outline` or "
@@ -198,12 +197,13 @@ def resolve_layouts(
         if "layout" not in props or not for_slide:
             continue
 
-        hint = str(props["layout"]).strip()
-        index = by_index.get(hint) or by_name.get(hint.lower())
+        requested = str(props["layout"]).strip()
+        index = by_index.get(requested) or by_name.get(requested.lower())
 
         if index is None:
             raise ToolError(
-                f"Layout '{hint}' is not in the bound slide master. Use one of: "
+                f"Layout '{requested}' is not in the bound slide master. "
+                "Use one of: "
                 + ", ".join(f"{layout.index} '{layout.name}'" for layout in layouts)
                 + "; nothing was changed."
             )

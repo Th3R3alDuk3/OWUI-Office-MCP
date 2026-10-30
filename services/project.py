@@ -177,6 +177,39 @@ async def publish_project(
 
 
 @asynccontextmanager
+async def lock_project(
+    user_id: str,
+    project_id: str,
+) -> AsyncGenerator[None]:
+
+    lock = _valkey.lock(
+        _LOCK_KEY.format(user_id=user_id, project_id=project_id),
+        timeout=_LOCK_TTL_SECONDS,
+        blocking_timeout=_settings.officecli_queue_timeout,
+    )
+    # Counted from before the lock, so no edit outlives it.
+    deadline = get_running_loop().time() + _LOCK_TTL_SECONDS
+
+    if not await lock.acquire():
+        raise ToolError(
+            "The project is busy; nothing was changed. Retry in a moment."
+        )
+
+    try:
+        async with timeout_at(deadline):
+            yield
+    except TimeoutError:
+        raise ToolError(
+            f"The edit took over {_LOCK_TTL_SECONDS} s and was stopped; split "
+            "the batch."
+        ) from None
+    finally:
+        # Releases only its own token; a lock lost meanwhile is no error here.
+        with suppress(LockError):
+            await lock.release()
+
+
+@asynccontextmanager
 async def load_project(
     user_id: str,
     project_id: str,
@@ -216,39 +249,6 @@ async def load_project(
             module=module,
             inventory=inventory,
         )
-
-
-@asynccontextmanager
-async def lock_project(
-    user_id: str,
-    project_id: str,
-) -> AsyncGenerator[None]:
-
-    lock = _valkey.lock(
-        _LOCK_KEY.format(user_id=user_id, project_id=project_id),
-        timeout=_LOCK_TTL_SECONDS,
-        blocking_timeout=_settings.officecli_queue_timeout,
-    )
-    # Counted from before the lock, so no edit outlives it.
-    deadline = get_running_loop().time() + _LOCK_TTL_SECONDS
-
-    if not await lock.acquire():
-        raise ToolError(
-            "The project is busy; nothing was changed. Retry in a moment."
-        )
-
-    try:
-        async with timeout_at(deadline):
-            yield
-    except TimeoutError:
-        raise ToolError(
-            f"The edit took over {_LOCK_TTL_SECONDS} s and was stopped; split "
-            "the batch."
-        ) from None
-    finally:
-        # Releases only its own token; a lock lost meanwhile is no error here.
-        with suppress(LockError):
-            await lock.release()
 
 
 async def add_asset(

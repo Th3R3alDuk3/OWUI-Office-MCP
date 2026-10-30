@@ -4,7 +4,7 @@ from pyvips import Error, ForeignKeep, Image, block_untrusted_set
 block_untrusted_set(True)
 
 _SHRINK_FROM_BYTES = 1 * 2**20
-_MAX_EDGE = 2560
+_MAX_EDGE_PIXELS = 2560
 _MIN_SAVING = 0.25
 _JPEG = b"\xff\xd8\xff"
 _PNG = b"\x89PNG\r\n\x1a\n"
@@ -18,7 +18,7 @@ def shrink_image(
 
     jpeg = data.startswith(_JPEG)
     small = len(data) <= _SHRINK_FROM_BYTES
-    # JPEG and PNG barely grow when re-encoded, so they lose metadata at any size.
+    # JPEG and PNG barely grow when re-encoded: metadata goes at any size.
     strippable = jpeg or data.startswith(_PNG)
 
     if small and not strippable:
@@ -27,16 +27,16 @@ def shrink_image(
     try:
 
         source = Image.new_from_buffer(data, "")
-        metadata = strippable and not _METADATA_FIELDS.isdisjoint(
+        has_metadata = strippable and not _METADATA_FIELDS.isdisjoint(
             source.get_fields(),
         )
 
         # An animation would keep only its first frame.
-        if (small and not metadata) or source.get_n_pages() > 1:
+        if (small and not has_metadata) or source.get_n_pages() > 1:
             return None
 
         image = Image.thumbnail_buffer(
-            data, _MAX_EDGE, size="down", output_profile="srgb",
+            data, _MAX_EDGE_PIXELS, size="down", output_profile="srgb",
         )
 
         # Photos stay JPEG; the rest may need transparency or sharp edges.
@@ -51,7 +51,7 @@ def shrink_image(
         return None
 
     # Without metadata to drop, only a clear saving is worth a re-encode.
-    if not metadata and len(output) > len(data) * (1 - _MIN_SAVING):
+    if not has_metadata and len(output) > len(data) * (1 - _MIN_SAVING):
         return None
 
     return output, ".jpg" if jpeg else ".png"

@@ -161,16 +161,14 @@ async def run_batch(
 
     results = data["results"]
 
-    if failures := [result for result in results if not result["success"]]:
-        raise ToolError(
-            "\n".join(
-                f"Command {failure['index']} failed "
-                f"({failure.get('code', 'error')}): {failure['error']}"
-                for failure in failures
+    for result in results:
+        if not result["success"]:
+            raise ToolError(
+                f"Command {result['index']} failed "
+                f"({result.get('code', 'error')}): {result['error']}\n"
+                "The batch stopped there and was rolled back, nothing changed. "
+                "Fix it and send the whole batch again."
             )
-            + "\nThe batch stopped there and was rolled back, nothing changed. "
-            "Fix it and send the whole batch again."
-        )
 
     return results
 
@@ -189,8 +187,11 @@ async def screenshot(
         ])
         count = len(slides["output"]["results"])
         target = ("--grid", str(ceil(sqrt(count)) or 1))
-    else:
+    elif file.suffix == ".docx":
         target = ("--grid",)
+    else:
+        # OfficeCLI refuses `--page` and `--grid` for a workbook.
+        target = ()
 
     with TemporaryDirectory(prefix="oc-") as temp:
 

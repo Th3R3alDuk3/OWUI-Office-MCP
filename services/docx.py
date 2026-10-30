@@ -11,7 +11,6 @@ MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 INVENTORY = DocxInventory
 COMPACT_QUERY = True
 
-
 START_HINT = (
     "Use style IDs from `inventory.styles` and check the result with `view "
     "text`. Each heading, paragraph and list item is its own block with a "
@@ -31,7 +30,7 @@ START_HINT = (
     "elements and props."
 )
 
-_NAMESPACE = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+_DOCUMENT = "/document"
 
 
 async def prepare(
@@ -39,36 +38,35 @@ async def prepare(
 ) -> None:
 
     (document,) = await run_batch(file, [
-        {"command": "raw", "part": "/document"},
+        {"command": "raw", "part": _DOCUMENT},
     ])
 
-    body = ElementTree.fromstring(document["output"]).find("w:body", _NAMESPACE)
+    body = ElementTree.fromstring(document["output"]).find("{*}body")
 
     if body is None:
         raise ToolError("The Word document has no body. Use another file.")
 
     sections = [
-        block for block in body
-        if block.find("w:pPr/w:sectPr", _NAMESPACE) is not None
+        block for block in body if block.find("{*}pPr/{*}sectPr") is not None
     ]
     commands: list[dict] = []
 
     if any(
-        block not in sections and block.tag != f"{{{_NAMESPACE['w']}}}sectPr"
+        block not in sections and not block.tag.endswith("}sectPr")
         for block in body
     ):
         commands.append({
-            "command": "raw-set", "part": "/document", "action": "remove",
+            "command": "raw-set", "part": _DOCUMENT, "action": "remove",
             "xpath": "//w:body/*[not(self::w:sectPr) and not(w:pPr/w:sectPr)]",
         })
 
     # Keep section properties, not text, fields or images in their paragraphs.
     if any(
-        child.tag != f"{{{_NAMESPACE['w']}}}pPr"
+        not child.tag.endswith("}pPr")
         for paragraph in sections for child in paragraph
     ):
         commands.append({
-            "command": "raw-set", "part": "/document", "action": "remove",
+            "command": "raw-set", "part": _DOCUMENT, "action": "remove",
             "xpath": "//w:body/w:p[w:pPr/w:sectPr]/*[not(self::w:pPr)]",
         })
 

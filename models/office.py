@@ -26,7 +26,7 @@ class Command(BaseModel):
     )
 
 
-def _listed(
+def _as_list(
     value: object,
 ) -> object:
 
@@ -38,7 +38,7 @@ def _listed(
 
 
 # A plain alias, so the schema inlines the array instead of a $ref.
-Commands = Annotated[list[Command], BeforeValidator(_listed)]
+Commands = Annotated[list[Command], BeforeValidator(_as_list)]
 
 
 class Layout(BaseModel):
@@ -132,7 +132,6 @@ class Template(BaseModel):
         description="Document format the template produces.",
     )
     slide_masters: dict[int, str] | None = Field(
-        default=None,
         description=(
             "PPTX only: slide master index -> name; pass the index as "
             "`slide_master` to `start_project`."

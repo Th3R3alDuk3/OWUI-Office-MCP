@@ -13,7 +13,7 @@ _MAX_BATCH_BYTES = 2**20
 _MAX_FILES = 10
 
 
-async def check_commands(
+async def build_batch(
     commands: list[Command],
     fetch: Callable[[str], Awaitable[str]],
 ) -> list[dict]:
@@ -29,25 +29,23 @@ async def check_commands(
 
         props = command.get("props", {})
 
-        try:
+        if not isinstance(props, dict):
+            raise ToolError(
+                f"Command {index}: `props` must be an object of prop name -> "
+                "value."
+            )
 
-            if not isinstance(props, dict):
-                raise ToolError("`props` must be an object of prop name -> value.")
+        # OfficeCLI reads prop names case-insensitively.
+        props = command["props"] = {
+            str(key).lower(): value for key, value in props.items()
+        }
 
-            # OfficeCLI reads prop names case-insensitively.
-            props = command["props"] = {
-                str(key).lower(): value for key, value in props.items()
-            }
-
-            for key in _SOURCE_PROPS & props.keys():
-                if not _FILE_REFERENCE.fullmatch(str(props[key])):
-                    raise ToolError(
-                        f"Prop `{key}` only takes `file:<file_id>` of an image "
-                        "the user attached."
-                    )
-
-        except ToolError as error:
-            raise ToolError(f"Command {index}: {error}") from None
+        for key in _SOURCE_PROPS & props.keys():
+            if not _FILE_REFERENCE.fullmatch(str(props[key])):
+                raise ToolError(
+                    f"Command {index}: prop `{key}` only takes "
+                    "`file:<file_id>` of an image the user attached."
+                )
 
     file_ids = {
         str(command["props"][key]).removeprefix("file:")

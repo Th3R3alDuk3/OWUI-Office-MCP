@@ -39,7 +39,7 @@ from services.project import (
     publish_project,
     templates,
 )
-from tools._guard import check_commands
+from tools._guard import build_batch
 
 _settings = get_settings()
 logger = get_logger(__name__)
@@ -305,7 +305,7 @@ async def run_commands(
         lock_project(user_id, project_id),
         load_project(user_id, project_id) as project,
     ):
-        batch = await check_commands(
+        batch = await build_batch(
             commands,
             fetch=partial(add_asset, project, token=token.token),
         )
@@ -350,7 +350,7 @@ async def preview_project(
         ge=1,
         description=(
             "Slide or page number for one page in full size; omit for all "
-            "slides or pages as thumbnails."
+            "slides or pages as thumbnails, and always for XLSX."
         ),
     ),
     user_id: str = TokenClaim("id"),

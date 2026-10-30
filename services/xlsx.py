@@ -9,7 +9,6 @@ INVENTORY = XlsxInventory
 # OfficeCLI has no compact xlsx query; `view text` is its compact form.
 COMPACT_QUERY = False
 
-
 START_HINT = (
     "Sheets, values and formulas of the design are kept; `inventory.sheets` "
     "counts their rows. Check the result with `view`. `import` with the "
