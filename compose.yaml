@@ -2,7 +2,7 @@ name: owui-office-mcp
 
 services:
 
-  server:
+  app:
     build:
       context: .
       dockerfile: docker/Dockerfile.app
@@ -28,7 +28,7 @@ services:
     command: valkey-server --maxmemory 1gb --maxmemory-policy volatile-lru --save ""
 
   valkey-admin:
-    image: valkey/valkey-admin:1.2.0
+    image: valkey/valkey-admin:1.3.0
     container_name: valkey-admin
     restart: unless-stopped
     # No login, so localhost only.

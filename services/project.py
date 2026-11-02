@@ -103,8 +103,8 @@ async def _download(
         )
     except RuntimeError as error:
         raise ToolError(
-            f"Could not fetch file '{file_id}' from OpenWebUI. Check that the "
-            "ID belongs to a file the user actually attached."
+            f"Could not fetch file '{file_id}'. {error} Check that the ID "
+            "belongs to a file the user actually attached."
         ) from error
 
     if len(data) > max_bytes:

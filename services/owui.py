@@ -1,4 +1,4 @@
-from httpx2 import AsyncClient, HTTPStatusError, RequestError
+from httpx2 import AsyncClient, HTTPStatusError, RequestError, Response
 
 from config import get_settings
 
@@ -16,6 +16,15 @@ def _client() -> AsyncClient:
         verify=_settings.owui_verify_tls,
         timeout=_REQUEST_TIMEOUT_SECONDS,
     )
+
+
+def _error_detail(
+    response: Response,
+) -> str:
+    try:
+        return str(response.json()["detail"]).rstrip(".")
+    except (ValueError, KeyError, TypeError):
+        return f"{response.status_code} {response.reason_phrase}"
 
 
 async def download_file(
@@ -36,6 +45,9 @@ async def download_file(
                 headers={"Authorization": f"Bearer {token}"},
             ) as response,
         ):
+            if response.is_error:
+                await response.aread()
+
             response.raise_for_status()
 
             data = bytearray()
@@ -53,7 +65,7 @@ async def download_file(
 
     except HTTPStatusError as error:
         raise RuntimeError(
-            "OpenWebUI rejected the download."
+            f"OpenWebUI rejected the download: {_error_detail(error.response)}."
         ) from error
     except RequestError as error:
         raise RuntimeError(
@@ -94,7 +106,7 @@ async def upload_file(
 
     except HTTPStatusError as error:
         raise RuntimeError(
-            "OpenWebUI rejected the upload."
+            f"OpenWebUI rejected the upload: {_error_detail(error.response)}."
         ) from error
     except RequestError as error:
         raise RuntimeError(

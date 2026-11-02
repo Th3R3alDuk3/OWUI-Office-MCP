@@ -411,7 +411,8 @@ async def export_project(
             )
         except RuntimeError as error:
             raise ToolError(
-                f"{error} Try once more, then tell the user."
+                f"{error} Fix the cause if you can and export again; "
+                "otherwise tell the user."
             ) from error
 
     return ExportResult(
