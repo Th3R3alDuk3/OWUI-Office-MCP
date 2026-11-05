@@ -1,14 +1,14 @@
 [project]
 name = "owui-office-mcp"
-version = "0.8.3"
+version = "0.9.0"
 description = "Office document MCP server for OpenWebUI."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.14"
 dependencies = [
-    "fastmcp>=4.1.5",
+    "fastmcp>=4.1.6",
     "httpx2>=2.16.0",
-    "pydantic>=2.14.2",
+    "pydantic>=2.14.3",
     "pydantic-settings>=2.16.2",
     "pyvips[binary]>=3.2.0",
     "valkey>=6.2.0",

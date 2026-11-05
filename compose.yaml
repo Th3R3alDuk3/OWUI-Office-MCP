@@ -14,8 +14,7 @@ services:
     read_only: true
     tmpfs:
       - /tmp
-    # OFFICECLI_MAX_PROCESSES x (OFFICECLI_MAX_MEMORY + 0.5 GB for Chromium)
-    # plus 2 GB for Python and the tmpfs scratch.
+    # OfficeCLI processes x (heap + 0.5 GB Chromium) + 2 GB Python and tmpfs.
     mem_limit: 8g
     depends_on:
       - valkey

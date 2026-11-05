@@ -23,7 +23,7 @@ logger = get_logger(__name__)
 _LANDRUN = "/usr/local/bin/landrun"
 _OFFICECLI = "/usr/local/bin/officecli"
 
-# landlock_create_ruleset(NULL, 0, LANDLOCK_CREATE_RULESET_VERSION) answers the ABI.
+# landlock_create_ruleset's VERSION flag (syscall 444) returns the ABI.
 LANDLOCK_ABI = CDLL(None).syscall(444, None, 0, 1)
 
 _ENVIRONMENT = {

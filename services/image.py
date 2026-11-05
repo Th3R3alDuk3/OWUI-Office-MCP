@@ -1,6 +1,6 @@
 from pyvips import Error, ForeignKeep, Image, block_untrusted_set
 
-# Uploads are untrusted: fuzzed loaders only.
+# Attachments are untrusted: fuzzed loaders only.
 block_untrusted_set(True)
 
 _SHRINK_FROM_BYTES = 1 * 2**20

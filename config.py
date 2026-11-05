@@ -15,7 +15,6 @@ class Settings(BaseSettings):
     jwt_algorithm: str
 
     owui_base_url: str
-    owui_public_url: str | None = None
     owui_verify_tls: bool
 
     valkey_url: str

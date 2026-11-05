@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Fetches the pinned OfficeCLI and landrun binaries into this directory, so
-# the image builds without reaching GitHub. Run it once before building.
+# Fetches the pinned binaries here, so the image builds without GitHub.
 set -euo pipefail
 
 cd "$(dirname "$0")"

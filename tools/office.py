@@ -19,13 +19,12 @@ from config import get_settings
 from models.office import (
     Commands,
     CommandsResult,
-    ExportResult,
+    ExportFile,
     Format,
     PptxInventory,
-    ReferenceResult,
     StartResult,
     Template,
-    TemplatesResult,
+    TemplateList,
 )
 from services import pptx
 from services.officecli import lookup_reference, run_batch, screenshot
@@ -33,13 +32,13 @@ from services.owui import upload_file
 from services.project import (
     add_asset,
     apply_batch,
-    fetch_upload,
+    fetch_document,
     load_project,
     lock_project,
     publish_project,
     templates,
 )
-from tools._guard import build_batch
+from tools._batch import build_batch
 
 _settings = get_settings()
 logger = get_logger(__name__)
@@ -81,11 +80,16 @@ async def _admitted(
     description=(
         "List the stored templates with their format and, for PPTX, their "
         "slide masters. Use this when the user did not attach a file, then "
-        "pick one for `start_project`."
+        "pick one of the format the user wants for `start_project`; for a "
+        "PPTX template with several `slide_masters`, also pass the one the "
+        "user named. If several could fit and the user named none, ask the "
+        "user instead of guessing, template and slide master in one question. "
+        "With none stored, ask the administrator to add some, or ask the user "
+        "to attach a file whose design to use."
     ),
     annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
 )
-async def list_templates() -> TemplatesResult:
+async def list_templates() -> TemplateList:
 
     listed: list[Template] = []
 
@@ -101,19 +105,7 @@ async def list_templates() -> TemplatesResult:
             ),
         ))
 
-    return TemplatesResult(
-        hint=(
-            "Pick a template of the format the user wants and call "
-            "`start_project`; for a PPTX template with several `slide_masters`, "
-            "also pass the one the user named. If several could fit and the "
-            "user named none, ask the user instead of guessing, template and "
-            "slide master in one question."
-            if listed else
-            "No stored templates. Ask the administrator to add some, or ask "
-            "the user to attach a file whose design to use."
-        ),
-        templates=listed,
-    )
+    return TemplateList(templates=listed)
 
 
 @tool(
@@ -185,7 +177,7 @@ async def start_project(
                     origin = f"template '{template_name}'"
 
                 case None, str():
-                    module, document = await fetch_upload(
+                    module, document = await fetch_document(
                         directory, file_id, token.token,
                     )
                     if not keep_content:
@@ -244,15 +236,10 @@ async def get_reference(
         description="Element and/or verb, e.g. `chart` or `add picture`.",
     ),
     user_id: str = TokenClaim("id"),
-) -> ReferenceResult:
+) -> JsonValue:
 
     async with _admitted(user_id):
-        reference = await lookup_reference(format, topic)
-
-    return ReferenceResult(
-        hint="Use the props as documented.",
-        reference=reference,
-    )
+        return await lookup_reference(format, topic)
 
 
 def _strip_src_keys(
@@ -317,10 +304,6 @@ async def run_commands(
         results = await apply_batch(project, batch)
 
     return CommandsResult(
-        hint=(
-            "Continue; once the user's request is fully applied, call "
-            "`export_project` once."
-        ),
         results=[_strip_src_keys(result.get("output")) for result in results],
         warnings=[
             f"Command {result['index']}: {warning['message']}"
@@ -377,9 +360,12 @@ async def preview_project(
 @tool(
     name="export_project",
     description=(
-        "Upload the project's document to OpenWebUI as the user's download. "
-        "Call it once the user's request is fully applied, not after each "
-        "change; run `validate` first if in doubt."
+        "Upload the project's document to OpenWebUI for the user. Call it "
+        "once the user's request is fully applied, not after each change; run "
+        "`validate` first if in doubt. Then show the file by passing its `path` "
+        "to `display_file` if available; otherwise give the user the Markdown "
+        "link `[name](path)`. The project stays editable; export it again "
+        "after later edits."
     ),
     annotations=ToolAnnotations(destructive_hint=False, open_world_hint=True),
 )
@@ -396,14 +382,14 @@ async def export_project(
     ),
     token: AccessToken = CurrentAccessToken(),
     user_id: str = TokenClaim("id"),
-) -> ExportResult:
+) -> ExportFile:
 
     async with _admitted(user_id), load_project(user_id, project_id) as project:
 
         upload_name = f"{file_name}.{project.module.FORMAT}"
 
         try:
-            owui_url = await upload_file(
+            file_id, path = await upload_file(
                 file_name=upload_name,
                 data=await to_thread(project.document.read_bytes),
                 content_type=project.module.MIME,
@@ -415,11 +401,8 @@ async def export_project(
                 "otherwise tell the user."
             ) from error
 
-    return ExportResult(
-        hint=(
-            "Share `owui_url` with the user as the download link. The project "
-            "stays editable; export it again after later edits."
-        ),
-        file_name=upload_name,
-        owui_url=owui_url,
+    return ExportFile(
+        id=file_id,
+        name=upload_name,
+        path=path,
     )

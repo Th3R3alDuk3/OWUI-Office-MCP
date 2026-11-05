@@ -1,8 +1,6 @@
 FROM ghcr.io/astral-sh/uv:python3.14-trixie-slim
 
-# OfficeCLI screenshots need a `chromium`; Landlock denies /dev/shm. The fonts
-# are metric-compatible with Office's, so line breaks match. tini reaps what a
-# batch killed on timeout leaves behind.
+# Chromium without /dev/shm (Landlock), Office-metric fonts, tini as reaper.
 RUN apt-get update \
  && apt-get install --yes --no-install-recommends \
     tini chromium-headless-shell \

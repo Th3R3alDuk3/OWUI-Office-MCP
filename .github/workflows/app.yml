@@ -1,7 +1,6 @@
 name: App image
 
-# Build on every push to main (latest) and dev (dev) and on version tags;
-# validate (build only) on PRs.
+# Pushes to main (latest), dev (dev) and tags; PRs build without pushing.
 on:
   push:
     branches: [main, dev]

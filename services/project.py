@@ -115,7 +115,7 @@ async def _download(
     return data, content_type
 
 
-async def fetch_upload(
+async def fetch_document(
     directory: Path,
     file_id: str,
     token: str,

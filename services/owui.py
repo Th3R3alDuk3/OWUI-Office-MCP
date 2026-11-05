@@ -6,7 +6,7 @@ _settings = get_settings()
 
 _REQUEST_TIMEOUT_SECONDS = 60.0
 
-# Exports are only downloaded, so OpenWebUI skips extraction and embedding.
+# Exports are only downloaded or displayed, so no extraction or embedding.
 _FILE_UPLOAD_URL = "{base_url}/api/v1/files/?process=false"
 _FILE_DOWNLOAD_URL = "{base_url}/api/v1/files/{file_id}/content"
 
@@ -78,7 +78,7 @@ async def upload_file(
     data: bytes,
     content_type: str,
     token: str,
-) -> str:
+) -> tuple[str, str]:
 
     try:
         async with _client() as client:
@@ -99,8 +99,9 @@ async def upload_file(
                     "OpenWebUI upload response carries no file id."
                 )
 
-        return _FILE_DOWNLOAD_URL.format(
-            base_url=_settings.owui_public_url or _settings.owui_base_url,
+        # Relative to OpenWebUI.
+        return file_id, _FILE_DOWNLOAD_URL.format(
+            base_url="",
             file_id=file_id,
         )
 

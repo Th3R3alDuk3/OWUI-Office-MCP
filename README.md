@@ -9,7 +9,7 @@
 
 Creates and edits PowerPoint, Word and Excel files from a stored template or
 an attached file, faithful to its design, and returns the result as an
-OpenWebUI download link. Built on
+OpenWebUI file with ID and download path. Built on
 [OfficeCLI](https://github.com/iOfficeAI/OfficeCLI), every run confined with
 [landrun](https://github.com/Zouuup/landrun); drafts live in
 [Valkey](https://valkey.io).
@@ -26,8 +26,7 @@ Linux 6.7 or newer.
    ```
 
    - `JWT_SECRET`: OpenWebUI's `WEBUI_SECRET_KEY`.
-   - `OWUI_BASE_URL`: OpenWebUI URL reachable from this server;
-     `OWUI_PUBLIC_URL` if users reach it under another one.
+   - `OWUI_BASE_URL`: OpenWebUI URL reachable from this server.
    - `OWUI_VERIFY_TLS`: keep `true`; `false` only for self-signed
      certificates or plain HTTP.
 
@@ -121,7 +120,7 @@ index.
   with its own errors; `get_reference` documents elements and props. Images
   come from attached files as `file:<file_id>`.
 
-Every result carries a `hint` with the next step. A project expires after
+`start_project` returns a `hint` with the next step. A project expires after
 `PROJECT_TTL` seconds without access; the exported file lives on in OpenWebUI.
 
 ## ⚙️ Limits & security
@@ -142,7 +141,7 @@ user, OfficeCLI processes, memory and timeouts, and the project TTL.
   placeholders stay within its bound slide master. Batches hold up to 500
   commands, 1 MB and 10 attached files; `run_commands` answers are cut at
   50 KB.
-- **Files:** uploads and documents stop past 100 MB, images past 20 MB;
+- **Files:** attachments and documents stop past 100 MB, images past 20 MB;
   macro and template variants are refused.
 - **Images:** libvips decodes attached images in the server process, with
   its unfuzzed loaders blocked. Except for animations, they lose their EXIF,
@@ -168,6 +167,6 @@ user, OfficeCLI processes, memory and timeouts, and the project TTL.
 - [`services/image.py`](services/image.py) - attached images: shrunk and stripped of metadata
 - [`services/pptx.py`](services/pptx.py), [`docx.py`](services/docx.py), [`xlsx.py`](services/xlsx.py) - one module per format: preparation and inventory; pptx also the slide master binding
 - [`services/project.py`](services/project.py) - Valkey project store, locks, templates, lifespan
-- [`tools/`](tools/) - the six MCP tools and the command guard
+- [`tools/`](tools/) - the six MCP tools and the batch builder
 - [`templates/`](templates/) - stored designs
 - [`docker/`](docker/) - the server image; [`compose.yaml`](compose.yaml) runs it with Valkey

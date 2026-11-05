@@ -109,7 +109,7 @@ async def inventory(
 
     for master_index, master in enumerate(masters["output"]["results"], start=1):
 
-        # Paths and `layout` count alike, in PowerPoint's order.
+        # `layout` counts the layouts of all masters in PowerPoint's order.
         details = await run_batch(file, [
             {
                 "command": "get", "depth": 2,

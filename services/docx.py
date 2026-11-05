@@ -3,7 +3,7 @@ from xml.etree import ElementTree
 
 from fastmcp.exceptions import ToolError
 
-from models.office import DocxInventory, DocxStyles
+from models.office import DocxInventory
 from services.officecli import run_batch
 
 FORMAT = "docx"
@@ -12,12 +12,12 @@ INVENTORY = DocxInventory
 COMPACT_QUERY = True
 
 START_HINT = (
-    "Use style IDs from `inventory.styles` and check the result with `view "
-    "text`. Each heading, paragraph and list item is its own block with a "
-    "`style`. New blocks go into `/body` and are appended unless `index`, "
-    "`after` or `before` say otherwise. Paths are 1-based, `index` in "
-    "add/move is 0-based. Charts take `chartType` (`column` is vertical, "
-    "`bar` horizontal), `categories` \"Q1,Q2\" and `data` "
+    "Use style IDs from `inventory`, the custom ones first, and check the "
+    "result with `view text`. Each heading, paragraph and list item is its "
+    "own block with a `style`. New blocks go into `/body` and are appended "
+    "unless `index`, `after` or `before` say otherwise. Paths are 1-based, "
+    "`index` in add/move is 0-based. Charts take `chartType` (`column` is "
+    "vertical, `bar` horizontal), `categories` \"Q1,Q2\" and `data` "
     "\"Revenue:1,2;Costs:3,4\"; tables `data` \"H1,H2;r1c1,r1c2\", a cell with "
     "a comma in double quotes, e.g. `\"0,30 €\"`; images `src` "
     "\"file:<file_id>\" from attached files; comments are `add` type `comment` "
@@ -82,11 +82,11 @@ async def inventory(
         {"command": "query", "selector": "style"},
     ])
 
-    groups = DocxStyles(
-        custom_paragraph=[],
-        custom_table=[],
-        builtin_paragraph=[],
-        builtin_table=[],
+    groups = DocxInventory(
+        custom_paragraph_styles=[],
+        custom_table_styles=[],
+        builtin_paragraph_styles=[],
+        builtin_table_styles=[],
     )
 
     for style in styles["output"]["results"]:
@@ -95,12 +95,12 @@ async def inventory(
 
         match properties.get("type"), bool(properties.get("customStyle")):
             case "paragraph", True:
-                groups.custom_paragraph.append(properties["id"])
+                groups.custom_paragraph_styles.append(properties["id"])
             case "table", True:
-                groups.custom_table.append(properties["id"])
+                groups.custom_table_styles.append(properties["id"])
             case "paragraph", False:
-                groups.builtin_paragraph.append(properties["id"])
+                groups.builtin_paragraph_styles.append(properties["id"])
             case "table", False:
-                groups.builtin_table.append(properties["id"])
+                groups.builtin_table_styles.append(properties["id"])
 
-    return DocxInventory(styles=groups)
+    return groups
