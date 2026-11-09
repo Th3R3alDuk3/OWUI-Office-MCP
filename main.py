@@ -21,7 +21,7 @@ INSTRUCTIONS = (
     "selector, `get_reference` only for props the hints leave open."
 )
 
-MAX_RESPONSE_BYTES = 50_000
+MAX_RESPONSE_BYTES = 100_000
 
 mcp = FastMCP(
     name="OWUI-Office-MCP",
