@@ -149,7 +149,7 @@ user, OfficeCLI processes, memory and timeouts, and the project TTL.
   inside the document, never on files. A PPTX project's slides and
   placeholders stay within its bound slide master. Batches hold up to 500
   commands, 1 MB and 10 attached files; `run_commands` answers are cut at
-  50 KB.
+  100 KB.
 - **Files:** attachments and documents stop past 100 MB, images past 20 MB;
   macro and template variants are refused.
 - **Images:** libvips decodes attached images in the server process, with
