@@ -25,7 +25,10 @@ Linux 6.7 or newer.
    cp .env.example .env
    ```
 
-   - `JWT_SECRET`: OpenWebUI's `WEBUI_SECRET_KEY`.
+   - `JWT_ISSUER`: the Keycloak realm, `https://<keycloak>/realms/<realm>`,
+     exactly as its tokens name it in `iss`.
+   - `JWT_JWKS_URI`: the realm's signing keys,
+     `<JWT_ISSUER>/protocol/openid-connect/certs`, reachable from this server.
    - `OWUI_BASE_URL`: OpenWebUI URL reachable from this server.
    - `OWUI_VERIFY_TLS`: keep `true`; `false` only for self-signed
      certificates or plain HTTP.
@@ -41,8 +44,9 @@ Linux 6.7 or newer.
    [Valkey Admin](https://github.com/valkey-io/valkey-admin) on
    `http://127.0.0.1:8080` shows the drafts.
 
-3. Connect OpenWebUI 0.12.5 or newer: add an **MCP** tool server at
-   `http://<host>:8000/mcp` with auth **Session**, assign it to models and
+3. Connect OpenWebUI 0.12.5 or newer, signing users in through the same
+   Keycloak realm: add an **MCP** tool server at
+   `http://<host>:8000/mcp` with auth **OAuth**, assign it to models and
    set their **Function Calling** to **Native**. Previews reach the model as
    images; turn **Vision** off for text-only models, which then get an
    `[image]` note instead. If OpenWebUI sets
@@ -50,8 +54,12 @@ Linux 6.7 or newer.
    at 600 s or more, or a long edit is reported as failed although it
    applied.
 
-Requests need a JWT signed with `JWT_SECRET` that names the user in the `id`
-claim. Use a TLS reverse proxy outside a trusted network.
+Requests need an access token of that realm signed with RS256; its `sub`
+claim names the user. For attachments and exports the server exchanges it for
+the user's OpenWebUI token, so OpenWebUI needs
+`ENABLE_OAUTH_TOKEN_EXCHANGE=true` and `OAUTH_TOKEN_EXCHANGE_TRUSTED_CLIENT_IDS`
+set to its client ID; Keycloak then has to add that client to the token's
+audience (audience mapper). Use a TLS reverse proxy outside a trusted network.
 
 ### Without Docker
 
@@ -128,9 +136,10 @@ index.
 [.env.example](.env.example) lists all settings: admission and rate limits per
 user, OfficeCLI processes, memory and timeouts, and the project TTL.
 
-- **Users:** every request carries the user's OpenWebUI JWT; projects and
-  attachments are tied to that user, so nobody reaches another user's
-  projects or files.
+- **Users:** every request carries the user's Keycloak access token;
+  projects are tied to its `sub`, attachments and exports to the OpenWebUI
+  account it is exchanged for, so nobody reaches another user's projects or
+  files.
 - **Isolation:** every OfficeCLI run starts through landrun and is confined by
   Landlock to its scratch directory, read-only system paths and no TCP; UDP
   stays open until Landlock ABI 10 (Linux 7.2) reaches landrun.

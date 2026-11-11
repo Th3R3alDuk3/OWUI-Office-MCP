@@ -149,7 +149,7 @@ async def start_project(
         ),
     ),
     token: AccessToken = CurrentAccessToken(),
-    user_id: str = TokenClaim("id"),
+    user_id: str = TokenClaim("sub"),
 ) -> StartResult:
 
     async with _admitted(user_id):
@@ -235,7 +235,7 @@ async def get_reference(
         pattern=r"^[a-z][a-z0-9-]*( [a-z][a-z0-9-]*)?$",
         description="Element and/or verb, e.g. `chart` or `add picture`.",
     ),
-    user_id: str = TokenClaim("id"),
+    user_id: str = TokenClaim("sub"),
 ) -> JsonValue:
 
     async with _admitted(user_id):
@@ -284,7 +284,7 @@ async def run_commands(
         ),
     ),
     token: AccessToken = CurrentAccessToken(),
-    user_id: str = TokenClaim("id"),
+    user_id: str = TokenClaim("sub"),
 ) -> CommandsResult:
 
     async with (
@@ -336,7 +336,7 @@ async def preview_project(
             "slides or pages as thumbnails, and always for XLSX."
         ),
     ),
-    user_id: str = TokenClaim("id"),
+    user_id: str = TokenClaim("sub"),
 ) -> ToolResult:
 
     async with _admitted(user_id), load_project(user_id, project_id) as project:
@@ -381,7 +381,7 @@ async def export_project(
         description="Stem without extension.",
     ),
     token: AccessToken = CurrentAccessToken(),
-    user_id: str = TokenClaim("id"),
+    user_id: str = TokenClaim("sub"),
 ) -> ExportFile:
 
     async with _admitted(user_id), load_project(user_id, project_id) as project:

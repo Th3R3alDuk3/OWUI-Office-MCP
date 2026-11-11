@@ -1,6 +1,6 @@
 from functools import cache
 
-from pydantic import Field, PositiveFloat, PositiveInt
+from pydantic import PositiveFloat, PositiveInt
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,8 +11,8 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    jwt_secret: str = Field(min_length=1)
-    jwt_algorithm: str
+    jwt_issuer: str
+    jwt_jwks_uri: str
 
     owui_base_url: str
     owui_verify_tls: bool
