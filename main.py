@@ -62,7 +62,7 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=8000,
         transport="http",
-        # Projects are keyed on the JWT user, never on an MCP session.
+        # All state lives in OpenWebUI, so any replica answers any request.
         stateless_http=True,
         show_banner=False,
     )

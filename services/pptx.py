@@ -7,7 +7,6 @@ from models.office import Layout, PptxInventory, SlideMaster
 from services.officecli import run_batch
 
 FORMAT = "pptx"
-MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 INVENTORY = PptxInventory
 COMPACT_QUERY = True
 
@@ -232,7 +231,7 @@ def check(
         if layout not in slots:
             raise ToolError(
                 f"Slide {number} uses layout '{layout}', which is outside the "
-                "bound slide master; no document changes were published."
+                "bound slide master; nothing was changed."
             )
 
         for slot in _slots(slide["children"]):
@@ -241,5 +240,5 @@ def check(
                     f"Slide {number}: placeholder {slot} does not belong to layout "
                     f"'{layout}', whose slots are "
                     f"{', '.join(sorted(slots[layout]))}. Use `phType` and `idx` "
-                    "from `slots`; no document changes were published."
+                    "from `slots`; nothing was changed."
                 )

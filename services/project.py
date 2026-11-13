@@ -1,6 +1,6 @@
-from asyncio import get_running_loop, timeout_at, to_thread
+from asyncio import to_thread
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from mimetypes import guess_extension
 from pathlib import Path
@@ -13,35 +13,32 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.utilities.logging import get_logger
 from pydantic import ValidationError
-from valkey.asyncio import Valkey
-from valkey.exceptions import LockError
 
-from config import get_settings
 from models.office import AnyInventory, PptxInventory
 from services import docx, pptx, xlsx
 from services.image import shrink_image
 from services.officecli import LANDLOCK_ABI, READ_COMMANDS, run_batch
-from services.owui import download_file
+from services.owui import (
+    delete_file,
+    download_file,
+    find_files,
+    upload_file,
+)
 
-_settings = get_settings()
 logger = get_logger(__name__)
 
 _FORMATS: dict[str, ModuleType] = {
     module.FORMAT: module for module in (pptx, docx, xlsx)
 }
-# Macro and template variants carry other types and fall through.
-_FORMATS_BY_TYPE = {module.MIME: module for module in _FORMATS.values()}
 
 _TEMPLATES = Path("templates")
 
-_PROJECT_KEY = "project:{user_id}:{project_id}"
-_LOCK_KEY = "lock:{user_id}:{project_id}"
-# A replica that dies mid-edit leaves its lock behind for this long.
-_LOCK_TTL_SECONDS = 600
+# A project is the newest file of this name; OpenWebUI cannot replace one.
+_PROJECT_FILE = "project-{project_id}.{format}"
 
 _MAX_DOCUMENT_BYTES = 100 * 2**20
-_MAX_ASSET_BYTES = 20 * 2**20
 
+_MAX_ASSET_BYTES = 20 * 2**20
 _IMAGE_TYPES = {
     "image/png", "image/jpeg", "image/gif", "image/bmp", "image/tiff",
     "image/webp",
@@ -57,73 +54,30 @@ class StoredTemplate:
 
 @dataclass(frozen=True)
 class Project:
-    key: str
+    id: str
+    file_id: str
+    owui_token: str
     document: Path
     module: ModuleType
     inventory: AnyInventory
 
 
-_valkey = Valkey.from_url(_settings.valkey_url)
 templates: dict[str, StoredTemplate] = {}
-
-
-async def _prepare_templates() -> None:
-
-    for source in sorted(_TEMPLATES.iterdir()):
-
-        if (module := _FORMATS.get(source.suffix.removeprefix("."))) is None:
-            continue
-
-        try:
-            with TemporaryDirectory() as scratch:
-                # OfficeCLI picks its handler by suffix.
-                document = Path(scratch) / f"document.{module.FORMAT}"
-                await to_thread(copyfile, source, document)
-                await module.prepare(document)
-                templates[source.name] = StoredTemplate(
-                    module=module,
-                    document=await to_thread(document.read_bytes),
-                    inventory=await module.inventory(document),
-                )
-        except Exception as error:
-            logger.warning("template %s skipped: %s", source.name, error)
-
-
-async def _download(
-    file_id: str,
-    token: str,
-    max_bytes: int,
-) -> tuple[bytes, str]:
-
-    try:
-        data, content_type = await download_file(
-            file_id=file_id,
-            token=token,
-            max_bytes=max_bytes,
-        )
-    except RuntimeError as error:
-        raise ToolError(
-            f"Could not fetch file '{file_id}'. {error} Check that the ID "
-            "belongs to a file the user actually attached."
-        ) from error
-
-    if len(data) > max_bytes:
-        raise ToolError(
-            f"File '{file_id}' is too large. Limit is {max_bytes // 2**20} MB."
-        )
-
-    return data, content_type
 
 
 async def fetch_document(
     directory: Path,
     file_id: str,
-    token: str,
+    owui_token: str,
 ) -> tuple[ModuleType, Path]:
 
-    data, content_type = await _download(file_id, token, _MAX_DOCUMENT_BYTES)
+    data, content_type = await download_file(
+        file_id, owui_token, _MAX_DOCUMENT_BYTES,
+    )
 
-    if (module := _FORMATS_BY_TYPE.get(content_type)) is None:
+    suffix = guess_extension(content_type) or ""
+
+    if (module := _FORMATS.get(suffix.removeprefix("."))) is None:
         raise ToolError(
             f"File '{file_id}' is no `.pptx`, `.docx` or `.xlsx` document."
         )
@@ -134,10 +88,12 @@ async def fetch_document(
     return module, document
 
 
-async def _store(
-    key: str,
+async def _save(
+    project_id: str,
+    previous_file_id: str | None,
     document: Path,
     inventory: AnyInventory,
+    owui_token: str,
 ) -> None:
 
     data = await to_thread(document.read_bytes)
@@ -148,103 +104,106 @@ async def _store(
             "nothing was changed."
         )
 
-    fields = {
-        "document": data,
-        "format": document.suffix.removeprefix("."),
-        "inventory": inventory.model_dump_json(),
-    }
+    document_format = document.suffix.removeprefix(".")
+    file_name = _PROJECT_FILE.format(
+        project_id=project_id, format=document_format,
+    )
 
-    # One transaction, so no project exists without its TTL.
-    async with _valkey.pipeline() as pipe:
-        pipe.hset(key, mapping=fields)
-        pipe.expire(key, _settings.project_ttl)
-        await pipe.execute()
+    file_id, _ = await upload_file(
+        file_name=file_name,
+        data=data,
+        metadata={
+            "format": document_format,
+            "inventory": inventory.model_dump_json(),
+        },
+        owui_token=owui_token,
+    )
+
+    if previous_file_id is None:
+        return
+
+    # No lock: a version saved by another chat since this edit started wins.
+    for file in await find_files(file_name, owui_token):
+        if file["id"] == previous_file_id:
+            break
+        if file["id"] != file_id:
+            await delete_file(file_id, owui_token)
+            raise ToolError(
+                f"Another chat saved project '{project_id}' meanwhile; this "
+                "edit was discarded. Read the project again, then repeat the "
+                "edit."
+            )
+
+    try:
+        await delete_file(previous_file_id, owui_token)
+    except ToolError as error:
+        # The edit is saved; only the previous version stays behind.
+        logger.warning(
+            "previous version of project %s kept: %s", project_id, error,
+        )
 
 
-async def publish_project(
-    user_id: str,
+async def create_project(
     document: Path,
     inventory: AnyInventory,
+    owui_token: str,
 ) -> str:
 
     project_id = token_hex(8)
-    await _store(
-        _PROJECT_KEY.format(user_id=user_id, project_id=project_id),
-        document, inventory,
+
+    await _save(
+        project_id=project_id,
+        previous_file_id=None,
+        document=document,
+        inventory=inventory,
+        owui_token=owui_token,
     )
 
     return project_id
 
 
 @asynccontextmanager
-async def lock_project(
-    user_id: str,
-    project_id: str,
-) -> AsyncGenerator[None]:
-
-    lock = _valkey.lock(
-        _LOCK_KEY.format(user_id=user_id, project_id=project_id),
-        timeout=_LOCK_TTL_SECONDS,
-        blocking_timeout=_settings.officecli_queue_timeout,
-    )
-    # Counted from before the lock, so no edit outlives it.
-    deadline = get_running_loop().time() + _LOCK_TTL_SECONDS
-
-    if not await lock.acquire():
-        raise ToolError(
-            "The project is busy; nothing was changed. Retry in a moment."
-        )
-
-    try:
-        async with timeout_at(deadline):
-            yield
-    except TimeoutError:
-        raise ToolError(
-            f"The edit took over {_LOCK_TTL_SECONDS} s and was stopped; split "
-            "the batch."
-        ) from None
-    finally:
-        # Releases only its own token; a lock lost meanwhile is no error here.
-        with suppress(LockError):
-            await lock.release()
-
-
-@asynccontextmanager
 async def load_project(
-    user_id: str,
     project_id: str,
+    owui_token: str,
 ) -> AsyncGenerator[Project]:
 
-    key = _PROJECT_KEY.format(user_id=user_id, project_id=project_id)
+    files = await find_files(
+        _PROJECT_FILE.format(project_id=project_id, format="*"), owui_token,
+    )
 
-    # Every access counts as activity; one round trip for both.
-    async with _valkey.pipeline() as pipe:
-        pipe.hgetall(key)
-        pipe.expire(key, _settings.project_ttl)
-        fields, _ = await pipe.execute()
-
-    if not fields:
+    if not files:
         raise ToolError(
-            f"Project '{project_id}' not found. Start one with `start_project`."
+            f"Project '{project_id}' not found. Pass the `project_id` from "
+            "`start_project`, or start a new one."
         )
 
-    module = _FORMATS[fields[b"format"].decode()]
+    file_id = files[0]["id"]
+    # What the upload passed as `metadata`.
+    fields = (files[0].get("meta") or {}).get("data") or {}
 
     try:
-        inventory = module.INVENTORY.model_validate_json(fields[b"inventory"])
-    except ValidationError:
+        module = _FORMATS[fields.get("format", "")]
+        inventory = module.INVENTORY.model_validate_json(
+            fields.get("inventory", ""),
+        )
+    except (KeyError, ValidationError):
         raise ToolError(
             f"Project '{project_id}' comes from an older server version. Start "
             "a new one with `start_project`."
         ) from None
 
+    data, _ = await download_file(file_id, owui_token, _MAX_DOCUMENT_BYTES)
+
     with TemporaryDirectory() as scratch:
 
         document = Path(scratch) / f"document.{module.FORMAT}"
-        await to_thread(document.write_bytes, fields[b"document"])
+        await to_thread(document.write_bytes, data)
 
         yield Project(
-            key=key,
+            id=project_id,
+            file_id=file_id,
+            owui_token=owui_token,
             document=document,
             module=module,
             inventory=inventory,
@@ -254,10 +213,11 @@ async def load_project(
 async def add_asset(
     project: Project,
     file_id: str,
-    token: str,
 ) -> str:
 
-    data, content_type = await _download(file_id, token, _MAX_ASSET_BYTES)
+    data, content_type = await download_file(
+        file_id, project.owui_token, _MAX_ASSET_BYTES,
+    )
 
     if content_type not in _IMAGE_TYPES:
         raise ToolError(
@@ -293,8 +253,13 @@ async def apply_batch(
     else:
         results = await run_batch(project.document, batch)
 
-    # All fields, so an evicted project comes back whole with this edit.
-    await _store(project.key, project.document, project.inventory)
+    await _save(
+        project_id=project.id,
+        previous_file_id=project.file_id,
+        document=project.document,
+        inventory=project.inventory,
+        owui_token=project.owui_token,
+    )
 
     return results
 
@@ -311,9 +276,23 @@ async def project_lifespan(
             "allows and keeps network access.", LANDLOCK_ABI,
         )
 
-    try:
-        await _valkey.ping()
-        await _prepare_templates()
-        yield
-    finally:
-        await _valkey.aclose()
+    for source in sorted(_TEMPLATES.iterdir()):
+
+        if (module := _FORMATS.get(source.suffix.removeprefix("."))) is None:
+            continue
+
+        try:
+            with TemporaryDirectory() as scratch:
+                # OfficeCLI picks its handler by suffix.
+                document = Path(scratch) / f"document.{module.FORMAT}"
+                await to_thread(copyfile, source, document)
+                await module.prepare(document)
+                templates[source.name] = StoredTemplate(
+                    module=module,
+                    document=await to_thread(document.read_bytes),
+                    inventory=await module.inventory(document),
+                )
+        except Exception as error:
+            logger.warning("template %s skipped: %s", source.name, error)
+
+    yield

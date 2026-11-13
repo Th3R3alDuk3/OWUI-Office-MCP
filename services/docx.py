@@ -7,7 +7,6 @@ from models.office import DocxInventory
 from services.officecli import run_batch
 
 FORMAT = "docx"
-MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 INVENTORY = DocxInventory
 COMPACT_QUERY = True
 

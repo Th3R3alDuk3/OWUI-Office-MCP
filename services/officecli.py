@@ -214,13 +214,13 @@ async def screenshot(
 
 
 async def lookup_reference(
-    format: str,
+    document_format: str,
     topic: str,
 ) -> JsonValue:
 
     with TemporaryDirectory(prefix="oc-") as temp:
         returncode, stdout, stderr = await _execute(
-            "help", format, *topic.split(), "--json",
+            "help", document_format, *topic.split(), "--json",
             cwd=Path(temp),
             temp=Path(temp),
         )

@@ -28,14 +28,13 @@ from models.office import (
 )
 from services import pptx
 from services.officecli import lookup_reference, run_batch, screenshot
-from services.owui import upload_file
+from services.owui import exchange_token, upload_file
 from services.project import (
     add_asset,
     apply_batch,
+    create_project,
     fetch_document,
     load_project,
-    lock_project,
-    publish_project,
     templates,
 )
 from tools._batch import build_batch
@@ -64,7 +63,7 @@ async def _admitted(
     try:
         yield
     except ToolError as error:
-        # What the model got wrong.
+        # Otherwise only the model would see it.
         logger.warning("user %s: %s", user_id, error)
         raise
     finally:
@@ -154,6 +153,8 @@ async def start_project(
 
     async with _admitted(user_id):
 
+        owui_token = await exchange_token(token.token)
+
         with TemporaryDirectory() as scratch:
 
             directory = Path(scratch)
@@ -178,7 +179,7 @@ async def start_project(
 
                 case None, str():
                     module, document = await fetch_document(
-                        directory, file_id, token.token,
+                        directory, file_id, owui_token,
                     )
                     if not keep_content:
                         await module.prepare(document)
@@ -200,7 +201,7 @@ async def start_project(
             elif slide_master is not None:
                 raise ToolError("`slide_master` applies to PPTX designs only.")
 
-            project_id = await publish_project(user_id, document, inventory)
+            project_id = await create_project(document, inventory, owui_token)
 
     return StartResult(
         hint=(
@@ -246,7 +247,7 @@ def _strip_src_keys(
     value: JsonValue,
 ) -> JsonValue:
 
-    # Where an `effective.*` value is inherited from; doubles a read.
+    # `.src` keys say where an `effective.*` value comes from and double a read.
     if isinstance(value, dict):
         return {
             key: _strip_src_keys(item)
@@ -272,7 +273,7 @@ def _strip_src_keys(
 )
 async def run_commands(
     project_id: str = Field(
-        pattern=r"^[0-9a-f]{16}$",
+        pattern=r"^[A-Za-z0-9-]{1,64}$",
         description="From `start_project`.",
     ),
     commands: Commands = Field(
@@ -289,12 +290,11 @@ async def run_commands(
 
     async with (
         _admitted(user_id),
-        lock_project(user_id, project_id),
-        load_project(user_id, project_id) as project,
+        load_project(project_id, await exchange_token(token.token)) as project,
     ):
         batch = await build_batch(
             commands,
-            fetch=partial(add_asset, project, token=token.token),
+            fetch=partial(add_asset, project),
         )
         # Queries answer in lines unless the model asks for the JSON tree.
         if project.module.COMPACT_QUERY:
@@ -325,7 +325,7 @@ async def run_commands(
 )
 async def preview_project(
     project_id: str = Field(
-        pattern=r"^[0-9a-f]{16}$",
+        pattern=r"^[A-Za-z0-9-]{1,64}$",
         description="From `start_project`.",
     ),
     page: int | None = Field(
@@ -336,10 +336,14 @@ async def preview_project(
             "slides or pages as thumbnails, and always for XLSX."
         ),
     ),
+    token: AccessToken = CurrentAccessToken(),
     user_id: str = TokenClaim("sub"),
 ) -> ToolResult:
 
-    async with _admitted(user_id), load_project(user_id, project_id) as project:
+    async with (
+        _admitted(user_id),
+        load_project(project_id, await exchange_token(token.token)) as project,
+    ):
         image = await screenshot(project.document, page)
 
     subject = f"Page {page}" if page else "The whole document"
@@ -371,7 +375,7 @@ async def preview_project(
 )
 async def export_project(
     project_id: str = Field(
-        pattern=r"^[0-9a-f]{16}$",
+        pattern=r"^[A-Za-z0-9-]{1,64}$",
         description="From `start_project`.",
     ),
     file_name: str = Field(
@@ -384,22 +388,17 @@ async def export_project(
     user_id: str = TokenClaim("sub"),
 ) -> ExportFile:
 
-    async with _admitted(user_id), load_project(user_id, project_id) as project:
-
+    async with (
+        _admitted(user_id),
+        load_project(project_id, await exchange_token(token.token)) as project,
+    ):
         upload_name = f"{file_name}.{project.module.FORMAT}"
-
-        try:
-            file_id, path = await upload_file(
-                file_name=upload_name,
-                data=await to_thread(project.document.read_bytes),
-                content_type=project.module.MIME,
-                token=token.token,
-            )
-        except RuntimeError as error:
-            raise ToolError(
-                f"{error} Fix the cause if you can and export again; "
-                "otherwise tell the user."
-            ) from error
+        file_id, path = await upload_file(
+            file_name=upload_name,
+            data=await to_thread(project.document.read_bytes),
+            metadata={},
+            owui_token=project.owui_token,
+        )
 
     return ExportFile(
         id=file_id,

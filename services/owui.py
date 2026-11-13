@@ -1,4 +1,9 @@
-from httpx2 import AsyncClient, HTTPStatusError, RequestError, Response
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager, suppress
+from json import dumps
+
+from fastmcp.exceptions import ToolError
+from httpx2 import AsyncClient, HTTPStatusError, RequestError
 
 from config import get_settings
 
@@ -7,146 +12,140 @@ _settings = get_settings()
 _REQUEST_TIMEOUT_SECONDS = 60.0
 
 # OpenWebUI's API takes only its own tokens.
-_TOKEN_EXCHANGE_URL = "{base_url}/api/v1/auths/oauth/oidc/token/exchange"
-# Exports are only downloaded or displayed, so no extraction or embedding.
-_FILE_UPLOAD_URL = "{base_url}/api/v1/files/?process=false"
-_FILE_DOWNLOAD_URL = "{base_url}/api/v1/files/{file_id}/content"
+_TOKEN_EXCHANGE_PATH = "/api/v1/auths/oauth/oidc/token/exchange"
+_FILE_SEARCH_PATH = "/api/v1/files/user/search"
+_FILE_DOWNLOAD_PATH = "/api/v1/files/{file_id}/content"
+# Projects and exports are never chat context, so no extraction or embeddings.
+_FILE_UPLOAD_PATH = "/api/v1/files/?process=false"
+_FILE_DELETE_PATH = "/api/v1/files/{file_id}"
+
+# Shared, so calls reuse connections.
+_client = AsyncClient(
+    base_url=_settings.owui_base_url,
+    timeout=_REQUEST_TIMEOUT_SECONDS,
+)
 
 
-def _client() -> AsyncClient:
-    return AsyncClient(
-        verify=_settings.owui_verify_tls,
-        timeout=_REQUEST_TIMEOUT_SECONDS,
-    )
+@asynccontextmanager
+async def _http_errors(
+    action: str,
+) -> AsyncGenerator[None]:
 
-
-def _error_detail(
-    response: Response,
-) -> str:
     try:
-        return str(response.json()["detail"]).rstrip(".")
-    except (ValueError, KeyError, TypeError):
-        return f"{response.status_code} {response.reason_phrase}"
+        yield
+    except HTTPStatusError as error:
+        response = error.response
+        detail = f"{response.status_code} {response.reason_phrase}"
+        with suppress(ValueError, KeyError, TypeError):
+            detail = str(response.json()["detail"]).rstrip(".")
+        raise ToolError(
+            f"OpenWebUI rejected the {action}: {detail}."
+        ) from error
+    except RequestError as error:
+        raise ToolError("Could not reach OpenWebUI.") from error
 
 
-async def _exchange_token(
+async def exchange_token(
     token: str,
 ) -> str:
 
-    try:
-        async with _client() as client:
+    async with _http_errors("token exchange"):
+        response = await _client.post(
+            _TOKEN_EXCHANGE_PATH,
+            json={"token": token},
+        )
+        response.raise_for_status()
 
-            response = await client.post(
-                url=_TOKEN_EXCHANGE_URL.format(
-                    base_url=_settings.owui_base_url,
-                ),
-                json={"token": token},
-            )
-            response.raise_for_status()
-
-    except HTTPStatusError as error:
-        raise RuntimeError(
-            "OpenWebUI rejected the token exchange: "
-            f"{_error_detail(error.response)}."
-        ) from error
-
-    owui_token = response.json().get("token")
-
-    if not owui_token:
-        raise RuntimeError(
+    if not (owui_token := response.json().get("token")):
+        raise ToolError(
             "OpenWebUI answered the token exchange without a token."
         )
 
     return owui_token
 
 
+async def find_files(
+    pattern: str,
+    owui_token: str,
+) -> list[dict]:
+
+    async with _http_errors(f"search for file '{pattern}'"):
+        response = await _client.get(
+            _FILE_SEARCH_PATH,
+            params={"filename": pattern},
+            headers={"Authorization": f"Bearer {owui_token}"},
+        )
+        response.raise_for_status()
+
+    # Newest first.
+    return response.json()
+
+
 async def download_file(
     file_id: str,
-    token: str,
+    owui_token: str,
     max_bytes: int,
 ) -> tuple[bytes, str]:
 
-    try:
-        owui_token = await _exchange_token(token)
+    async with (
+        _http_errors(f"download of file '{file_id}'"),
+        _client.stream(
+            "GET",
+            _FILE_DOWNLOAD_PATH.format(file_id=file_id),
+            headers={"Authorization": f"Bearer {owui_token}"},
+        ) as response,
+    ):
+        if response.is_error:
+            await response.aread()
 
-        async with (
-            _client() as client,
-            client.stream(
-                "GET",
-                url=_FILE_DOWNLOAD_URL.format(
-                    base_url=_settings.owui_base_url,
-                    file_id=file_id,
-                ),
-                headers={"Authorization": f"Bearer {owui_token}"},
-            ) as response,
-        ):
-            if response.is_error:
-                await response.aread()
+        response.raise_for_status()
 
-            response.raise_for_status()
+        data = bytearray()
 
-            data = bytearray()
+        async for chunk in response.aiter_bytes():
+            data += chunk
+            if len(data) > max_bytes:
+                raise ToolError(
+                    f"File '{file_id}' exceeds {max_bytes // 2**20} MB."
+                )
 
-            async for chunk in response.aiter_bytes():
-                data += chunk
-                # One byte over is enough for the caller to reject it.
-                if len(data) > max_bytes:
-                    break
-
-        return (
-            bytes(data),
-            response.headers.get("content-type", "").partition(";")[0],
-        )
-
-    except HTTPStatusError as error:
-        raise RuntimeError(
-            f"OpenWebUI rejected the download: {_error_detail(error.response)}."
-        ) from error
-    except RequestError as error:
-        raise RuntimeError(
-            "Could not reach OpenWebUI."
-        ) from error
+    return (
+        bytes(data),
+        response.headers.get("content-type", "").partition(";")[0],
+    )
 
 
 async def upload_file(
     file_name: str,
     data: bytes,
-    content_type: str,
-    token: str,
+    metadata: dict,
+    owui_token: str,
 ) -> tuple[str, str]:
 
-    try:
-        owui_token = await _exchange_token(token)
-
-        async with _client() as client:
-
-            response = await client.post(
-                url=_FILE_UPLOAD_URL.format(
-                    base_url=_settings.owui_base_url,
-                ),
-                headers={"Authorization": f"Bearer {owui_token}"},
-                files={"file": (file_name, data, content_type)},
-            )
-            response.raise_for_status()
-
-            file_id = response.json().get("id")
-
-            if not file_id:
-                raise RuntimeError(
-                    "OpenWebUI upload response carries no file id."
-                )
-
-        # Relative to OpenWebUI.
-        return file_id, _FILE_DOWNLOAD_URL.format(
-            base_url="",
-            file_id=file_id,
+    async with _http_errors("upload"):
+        response = await _client.post(
+            _FILE_UPLOAD_PATH,
+            headers={"Authorization": f"Bearer {owui_token}"},
+            data={"metadata": dumps(metadata)},
+            files={"file": (file_name, data)},
         )
+        response.raise_for_status()
 
-    except HTTPStatusError as error:
-        raise RuntimeError(
-            f"OpenWebUI rejected the upload: {_error_detail(error.response)}."
-        ) from error
-    except RequestError as error:
-        raise RuntimeError(
-            "Could not reach OpenWebUI."
-        ) from error
+    if not (file_id := response.json().get("id")):
+        raise ToolError("OpenWebUI answered the upload without a file ID.")
+
+    # Relative to OpenWebUI.
+    return file_id, _FILE_DOWNLOAD_PATH.format(file_id=file_id)
+
+
+async def delete_file(
+    file_id: str,
+    owui_token: str,
+) -> None:
+
+    async with _http_errors(f"deletion of file '{file_id}'"):
+        response = await _client.delete(
+            _FILE_DELETE_PATH.format(file_id=file_id),
+            headers={"Authorization": f"Bearer {owui_token}"},
+        )
+        response.raise_for_status()

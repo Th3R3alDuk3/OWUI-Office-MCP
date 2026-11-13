@@ -15,9 +15,6 @@ class Settings(BaseSettings):
     jwt_jwks_uri: str
 
     owui_base_url: str
-    owui_verify_tls: bool
-
-    valkey_url: str
 
     max_concurrent_requests: PositiveInt
     max_concurrent_requests_per_user: PositiveInt
@@ -30,11 +27,8 @@ class Settings(BaseSettings):
     officecli_max_memory: PositiveInt
     # seconds; one OfficeCLI run
     officecli_timeout: PositiveFloat
-    # seconds; waiting for the project lock and an OfficeCLI process
+    # seconds; waiting for an OfficeCLI process
     officecli_queue_timeout: PositiveFloat
-
-    # seconds; idle time until a project expires
-    project_ttl: PositiveInt
 
 
 @cache

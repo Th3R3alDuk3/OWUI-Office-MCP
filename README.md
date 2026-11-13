@@ -11,8 +11,8 @@ Creates and edits PowerPoint, Word and Excel files from a stored template or
 an attached file, faithful to its design, and returns the result as an
 OpenWebUI file with ID and download path. Built on
 [OfficeCLI](https://github.com/iOfficeAI/OfficeCLI), every run confined with
-[landrun](https://github.com/Zouuup/landrun); drafts live in
-[Valkey](https://valkey.io).
+[landrun](https://github.com/Zouuup/landrun); drafts live as the user's files
+in OpenWebUI.
 
 ## 🚀 Setup
 
@@ -30,8 +30,8 @@ Linux 6.7 or newer.
    - `JWT_JWKS_URI`: the realm's signing keys,
      `<JWT_ISSUER>/protocol/openid-connect/certs`, reachable from this server.
    - `OWUI_BASE_URL`: OpenWebUI URL reachable from this server.
-   - `OWUI_VERIFY_TLS`: keep `true`; `false` only for self-signed
-     certificates or plain HTTP.
+   - Corporate or self-signed CAs for Keycloak and OpenWebUI: mount a PEM
+     bundle with every CA to trust and set `SSL_CERT_FILE` to it.
 
 2. Fetch the pinned OfficeCLI and landrun, then start the stack:
 
@@ -40,9 +40,7 @@ Linux 6.7 or newer.
    docker compose up -d --build
    ```
 
-   The server listens on port 8000;
-   [Valkey Admin](https://github.com/valkey-io/valkey-admin) on
-   `http://127.0.0.1:8080` shows the drafts.
+   The server listens on port 8000.
 
 3. Connect OpenWebUI 0.12.5 or newer, signing users in through the same
    Keycloak realm: add an **MCP** tool server at
@@ -55,8 +53,8 @@ Linux 6.7 or newer.
    applied.
 
 Requests need an access token of that realm signed with RS256; its `sub`
-claim names the user. For attachments and exports the server exchanges it for
-the user's OpenWebUI token, so OpenWebUI needs
+claim names the user. For OpenWebUI's files the server exchanges it for the
+user's OpenWebUI token, so OpenWebUI needs
 `ENABLE_OAUTH_TOKEN_EXCHANGE=true` and `OAUTH_TOKEN_EXCHANGE_TRUSTED_CLIENT_IDS`
 set to its client ID; Keycloak then has to add that client to the token's
 audience (audience mapper). Use a TLS reverse proxy outside a trusted network.
@@ -64,13 +62,11 @@ audience (audience mapper). Use a TLS reverse proxy outside a trusted network.
 ### Without Docker
 
 For testing, the server runs directly with [uv](https://docs.astral.sh/uv/).
-It expects `officecli` and `landrun` in `/usr/local/bin`, a Valkey at
-`VALKEY_URL` (here `valkey://localhost:6379`) and, for previews, a `chromium`
-on the `PATH`:
+It expects `officecli` and `landrun` in `/usr/local/bin` and, for previews, a
+`chromium` on the `PATH`:
 
 ```bash
 bin/download.sh && sudo install -m 755 bin/officecli bin/landrun /usr/local/bin/
-docker run -d -p 6379:6379 valkey/valkey:9.1.3-alpine
 uv sync
 uv run python main.py
 ```
@@ -128,18 +124,18 @@ index.
   with its own errors; `get_reference` documents elements and props. Images
   come from attached files as `file:<file_id>`.
 
-`start_project` returns a `hint` with the next step. A project expires after
-`PROJECT_TTL` seconds without access; the exported file lives on in OpenWebUI.
+`start_project` returns a `hint` with the next step. A project is a file of
+the user in OpenWebUI (`project-<project_id>.pptx`, `.docx` or `.xlsx`) that
+stays until deleted there, like the exported files.
 
 ## ⚙️ Limits & security
 
 [.env.example](.env.example) lists all settings: admission and rate limits per
-user, OfficeCLI processes, memory and timeouts, and the project TTL.
+user, OfficeCLI processes, memory and timeouts.
 
 - **Users:** every request carries the user's Keycloak access token;
-  projects are tied to its `sub`, attachments and exports to the OpenWebUI
-  account it is exchanged for, so nobody reaches another user's projects or
-  files.
+  projects and exports belong to the OpenWebUI account it is exchanged for,
+  so only that user and OpenWebUI admins reach them.
 - **Isolation:** every OfficeCLI run starts through landrun and is confined by
   Landlock to its scratch directory, read-only system paths and no TCP; UDP
   stays open until Landlock ABI 10 (Linux 7.2) reaches landrun.
@@ -155,27 +151,28 @@ user, OfficeCLI processes, memory and timeouts, and the project TTL.
 - **Images:** libvips decodes attached images in the server process, with
   its unfuzzed loaders blocked. Except for animations, they lose their EXIF,
   XMP and IPTC metadata, and those past 1 MB are scaled to 2560 px.
-- **Drafts:** projects are Valkey hashes with a TTL, edited under a
-  per-project lock and written back only when the whole batch succeeded.
-  Valkey runs bounded and keeps nothing on disk; give it a password in
-  `VALKEY_URL` when it is reachable beyond the compose network.
+- **Drafts:** a batch is written back only when it succeeded as a whole, as
+  a new file of the project's name; the previous one is then deleted. Of two
+  edits of one project at once, the first saved wins; the other is discarded
+  with a request to repeat it. OpenWebUI stores
+  projects and exports unprocessed, without extraction or embeddings.
 - **Errors:** tool errors say what to do next and carry no exception text.
 - **Sizing:** the container's 8 GB cover four OfficeCLI runs with 1 GB heap
   and Chromium each, plus 2 GB for Python and the tmpfs scratch, which hold
   `MAX_CONCURRENT_REQUESTS` documents at once; scale it with
   `OFFICECLI_MAX_PROCESSES`. Previews of large decks need the 1 GB heap.
-  Limits are per server process; several replicas can share one Valkey.
+  Limits are per server process.
 
 ## 🧩 Layout
 
 - [`main.py`](main.py) - FastMCP server: auth, rate and response limits, lifespan, tools
 - [`config.py`](config.py) - settings, read from `.env`
 - [`models/office.py`](models/office.py) - the command shape, inventories and results
-- [`services/owui.py`](services/owui.py) - OpenWebUI downloads and uploads
+- [`services/owui.py`](services/owui.py) - OpenWebUI token exchange and files
 - [`services/officecli.py`](services/officecli.py) - OfficeCLI runs under landrun
 - [`services/image.py`](services/image.py) - attached images: shrunk and stripped of metadata
 - [`services/pptx.py`](services/pptx.py), [`docx.py`](services/docx.py), [`xlsx.py`](services/xlsx.py) - one module per format: preparation and inventory; pptx also the slide master binding
-- [`services/project.py`](services/project.py) - Valkey project store, locks, templates, lifespan
+- [`services/project.py`](services/project.py) - projects as OpenWebUI files, templates, lifespan
 - [`tools/`](tools/) - the six MCP tools and the batch builder
 - [`templates/`](templates/) - stored designs
-- [`docker/`](docker/) - the server image; [`compose.yaml`](compose.yaml) runs it with Valkey
+- [`docker/`](docker/) - the server image; [`compose.yaml`](compose.yaml) runs it
