@@ -1,4 +1,5 @@
 import re
+from asyncio import gather
 from collections.abc import Awaitable, Callable
 from json import dumps
 
@@ -37,7 +38,7 @@ async def build_batch(
 
         # OfficeCLI reads prop names case-insensitively.
         props = command["props"] = {
-            str(key).lower(): value for key, value in props.items()
+            key.lower(): value for key, value in props.items()
         }
 
         for key in _SOURCE_PROPS & props.keys():
@@ -59,7 +60,9 @@ async def build_batch(
         )
 
     # Invalid later commands must not trigger downloads for earlier ones.
-    fetched = {file_id: await fetch(file_id) for file_id in file_ids}
+    fetched = dict(zip(
+        file_ids, await gather(*map(fetch, file_ids)), strict=True,
+    ))
 
     for command in batch:
         props = command["props"]

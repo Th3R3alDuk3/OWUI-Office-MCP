@@ -1,10 +1,12 @@
 import re
+from itertools import islice
+from math import ceil, sqrt
 from pathlib import Path
 
 from fastmcp.exceptions import ToolError
 
 from models.office import Layout, PptxInventory, SlideMaster
-from services.officecli import run_batch
+from services.officecli import run_batch, screenshot
 
 FORMAT = "pptx"
 INVENTORY = PptxInventory
@@ -103,23 +105,25 @@ async def inventory(
         {"command": "get", "path": "/", "depth": 0},
         {"command": "query", "selector": "slidemaster"},
     ])
+    masters = masters["output"]["results"]
+    # `layout` counts the layouts of all masters in PowerPoint's order.
+    details = enumerate(await run_batch(file, [
+        {
+            "command": "get", "depth": 2,
+            "path": f"{master['path']}/slidelayout[{position}]",
+        }
+        for master in masters
+        for position in range(1, master["format"]["layoutCount"] + 1)
+    ]), start=1)
     listed: list[SlideMaster] = []
-    layout_index = 0
 
-    for master_index, master in enumerate(masters["output"]["results"], start=1):
+    for master_index, master in enumerate(masters, start=1):
 
-        # `layout` counts the layouts of all masters in PowerPoint's order.
-        details = await run_batch(file, [
-            {
-                "command": "get", "depth": 2,
-                "path": f"{master['path']}/slidelayout[{position}]",
-            }
-            for position in range(1, master["format"]["layoutCount"] + 1)
-        ])
         layouts: list[Layout] = []
 
-        for detail in details:
-            layout_index += 1
+        for layout_index, detail in islice(
+            details, master["format"]["layoutCount"],
+        ):
             layout = detail["output"]["results"][0]
             layouts.append(Layout(
                 index=layout_index,
@@ -242,3 +246,20 @@ def check(
                     f"{', '.join(sorted(slots[layout]))}. Use `phType` and `idx` "
                     "from `slots`; nothing was changed."
                 )
+
+
+async def preview(
+    file: Path,
+    page: int | None,
+) -> bytes:
+
+    if page:
+        return await screenshot(file, "--page", str(page))
+
+    (slides,) = await run_batch(file, [
+        {"command": "query", "selector": "slide"},
+    ])
+    count = len(slides["output"]["results"])
+
+    # OfficeCLI's own columns cut slides off; as many columns as rows fit.
+    return await screenshot(file, "--grid", str(ceil(sqrt(count)) or 1))

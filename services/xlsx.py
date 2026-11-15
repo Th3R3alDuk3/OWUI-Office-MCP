@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from models.office import Sheet, XlsxInventory
-from services.officecli import run_batch
+from services.officecli import run_batch, screenshot
 
 FORMAT = "xlsx"
 INVENTORY = XlsxInventory
@@ -43,3 +43,15 @@ async def inventory(
         Sheet(name=sheet["path"].removeprefix("/"), rows=sheet["childCount"])
         for sheet in sheets["output"]["results"]
     ])
+
+
+async def preview(
+    file: Path,
+    page: int | None,
+) -> bytes:
+
+    if page:
+        return await screenshot(file, "--page", str(page))
+
+    # OfficeCLI refuses `--grid` for a workbook.
+    return await screenshot(file)

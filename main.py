@@ -4,11 +4,9 @@ from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.middleware.rate_limiting import RateLimitingMiddleware
 from fastmcp.server.middleware.response_limiting import ResponseLimitingMiddleware
 
-from config import get_settings
+from config import settings
 from services.project import project_lifespan
 from tools import TOOLS
-
-settings = get_settings()
 
 INSTRUCTIONS = (
     "Creates and edits PowerPoint, Word and Excel files from a stored template "

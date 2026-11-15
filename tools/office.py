@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from functools import partial
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import Annotated
 
 from fastmcp.dependencies import CurrentAccessToken, TokenClaim
 from fastmcp.exceptions import ToolError
@@ -15,7 +16,7 @@ from fastmcp.utilities.types import Image
 from mcp.types import ToolAnnotations
 from pydantic import Field, JsonValue
 
-from config import get_settings
+from config import settings
 from models.office import (
     Commands,
     CommandsResult,
@@ -27,7 +28,7 @@ from models.office import (
     TemplateList,
 )
 from services import pptx
-from services.officecli import lookup_reference, run_batch, screenshot
+from services.officecli import lookup_reference, run_batch
 from services.owui import exchange_token, upload_file
 from services.project import (
     add_asset,
@@ -39,7 +40,6 @@ from services.project import (
 )
 from tools._batch import build_batch
 
-_settings = get_settings()
 logger = get_logger(__name__)
 
 _active: Counter[str] = Counter()
@@ -51,8 +51,8 @@ async def _admitted(
 ) -> AsyncGenerator[None]:
 
     if (
-        _active.total() >= _settings.max_concurrent_requests
-        or _active[user_id] >= _settings.max_concurrent_requests_per_user
+        _active.total() >= settings.max_concurrent_requests
+        or _active[user_id] >= settings.max_concurrent_requests_per_user
     ):
         raise ToolError(
             "The server is busy; nothing was changed. Retry in a moment."
@@ -120,35 +120,35 @@ async def list_templates() -> TemplateList:
     annotations=ToolAnnotations(destructive_hint=False, open_world_hint=True),
 )
 async def start_project(
-    template_name: str | None = Field(
+    template_name: Annotated[str | None, Field(
         default=None,
         description="Stored template from `list_templates`.",
-    ),
-    file_id: str | None = Field(
+    )],
+    file_id: Annotated[str | None, Field(
         default=None,
         pattern=r"^[A-Za-z0-9-]{1,64}$",
         description=(
             "OpenWebUI file ID of the attached file; never a template name, "
             "never invented."
         ),
-    ),
-    keep_content: bool = Field(
+    )],
+    keep_content: Annotated[bool, Field(
         default=False,
         description=(
             "Edit the attached file as it is instead of using only its "
             "design. Workbooks keep their content either way."
         ),
-    ),
-    slide_master: int | None = Field(
+    )],
+    slide_master: Annotated[int | None, Field(
         default=None,
         ge=1,
         description=(
             "PPTX only: index of the slide master the project is bound to. "
             "Required when the design has several slide masters."
         ),
-    ),
-    token: AccessToken = CurrentAccessToken(),
-    user_id: str = TokenClaim("sub"),
+    )],
+    token: Annotated[AccessToken, CurrentAccessToken()],
+    user_id: Annotated[str, TokenClaim("sub")],
 ) -> StartResult:
 
     async with _admitted(user_id):
@@ -229,14 +229,14 @@ async def start_project(
     annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
 )
 async def get_reference(
-    format: Format = Field(
+    format: Annotated[Format, Field(
         description="Document format.",
-    ),
-    topic: str = Field(
+    )],
+    topic: Annotated[str, Field(
         pattern=r"^[a-z][a-z0-9-]*( [a-z][a-z0-9-]*)?$",
         description="Element and/or verb, e.g. `chart` or `add picture`.",
-    ),
-    user_id: str = TokenClaim("sub"),
+    )],
+    user_id: Annotated[str, TokenClaim("sub")],
 ) -> JsonValue:
 
     async with _admitted(user_id):
@@ -272,20 +272,20 @@ def _strip_src_keys(
     annotations=ToolAnnotations(destructive_hint=True, open_world_hint=True),
 )
 async def run_commands(
-    project_id: str = Field(
+    project_id: Annotated[str, Field(
         pattern=r"^[A-Za-z0-9-]{1,64}$",
         description="From `start_project`.",
-    ),
-    commands: Commands = Field(
+    )],
+    commands: Annotated[Commands, Field(
         min_length=1,
         max_length=500,
         description=(
             'OfficeCLI commands, e.g. [{"command": "add", "parent": "/", '
             '"type": "slide", "props": {"layout": "3"}}].'
         ),
-    ),
-    token: AccessToken = CurrentAccessToken(),
-    user_id: str = TokenClaim("sub"),
+    )],
+    token: Annotated[AccessToken, CurrentAccessToken()],
+    user_id: Annotated[str, TokenClaim("sub")],
 ) -> CommandsResult:
 
     async with (
@@ -324,27 +324,27 @@ async def run_commands(
     annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
 )
 async def preview_project(
-    project_id: str = Field(
+    project_id: Annotated[str, Field(
         pattern=r"^[A-Za-z0-9-]{1,64}$",
         description="From `start_project`.",
-    ),
-    page: int | None = Field(
+    )],
+    page: Annotated[int | None, Field(
         default=None,
         ge=1,
         description=(
             "Slide or page number for one page in full size; omit for all "
             "slides or pages as thumbnails, and always for XLSX."
         ),
-    ),
-    token: AccessToken = CurrentAccessToken(),
-    user_id: str = TokenClaim("sub"),
+    )],
+    token: Annotated[AccessToken, CurrentAccessToken()],
+    user_id: Annotated[str, TokenClaim("sub")],
 ) -> ToolResult:
 
     async with (
         _admitted(user_id),
         load_project(project_id, await exchange_token(token.token)) as project,
     ):
-        image = await screenshot(project.document, page)
+        image = await project.module.preview(project.document, page)
 
     subject = f"Page {page}" if page else "The whole document"
 
@@ -374,18 +374,18 @@ async def preview_project(
     annotations=ToolAnnotations(destructive_hint=False, open_world_hint=True),
 )
 async def export_project(
-    project_id: str = Field(
+    project_id: Annotated[str, Field(
         pattern=r"^[A-Za-z0-9-]{1,64}$",
         description="From `start_project`.",
-    ),
-    file_name: str = Field(
+    )],
+    file_name: Annotated[str, Field(
         min_length=1,
         max_length=60,
         pattern=r'^[^/\\:*?"<>|]+$',
         description="Stem without extension.",
-    ),
-    token: AccessToken = CurrentAccessToken(),
-    user_id: str = TokenClaim("sub"),
+    )],
+    token: Annotated[AccessToken, CurrentAccessToken()],
+    user_id: Annotated[str, TokenClaim("sub")],
 ) -> ExportFile:
 
     async with (

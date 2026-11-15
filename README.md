@@ -171,7 +171,7 @@ user, OfficeCLI processes, memory and timeouts.
 - [`services/owui.py`](services/owui.py) - OpenWebUI token exchange and files
 - [`services/officecli.py`](services/officecli.py) - OfficeCLI runs under landrun
 - [`services/image.py`](services/image.py) - attached images: shrunk and stripped of metadata
-- [`services/pptx.py`](services/pptx.py), [`docx.py`](services/docx.py), [`xlsx.py`](services/xlsx.py) - one module per format: preparation and inventory; pptx also the slide master binding
+- [`services/pptx.py`](services/pptx.py), [`docx.py`](services/docx.py), [`xlsx.py`](services/xlsx.py) - one module per format: preparation, inventory and preview; pptx also the slide master binding
 - [`services/project.py`](services/project.py) - projects as OpenWebUI files, templates, lifespan
 - [`tools/`](tools/) - the six MCP tools and the batch builder
 - [`templates/`](templates/) - stored designs

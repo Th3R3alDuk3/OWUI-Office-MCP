@@ -5,9 +5,7 @@ from json import dumps
 from fastmcp.exceptions import ToolError
 from httpx2 import AsyncClient, HTTPStatusError, RequestError
 
-from config import get_settings
-
-_settings = get_settings()
+from config import settings
 
 _REQUEST_TIMEOUT_SECONDS = 60.0
 
@@ -21,7 +19,7 @@ _FILE_DELETE_PATH = "/api/v1/files/{file_id}"
 
 # Shared, so calls reuse connections.
 _client = AsyncClient(
-    base_url=_settings.owui_base_url,
+    base_url=settings.owui_base_url,
     timeout=_REQUEST_TIMEOUT_SECONDS,
 )
 

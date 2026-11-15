@@ -1,7 +1,8 @@
 FROM ghcr.io/astral-sh/uv:python3.14-trixie-slim
 
 # Chromium without /dev/shm (Landlock), Office-metric fonts, tini as reaper.
-RUN apt-get update \
+# An offline mirror serves expired package lists.
+RUN apt-get update -o Acquire::Check-Valid-Until=false \
  && apt-get install --yes --no-install-recommends \
     tini chromium-headless-shell \
     fonts-liberation fonts-crosextra-carlito fonts-crosextra-caladea \

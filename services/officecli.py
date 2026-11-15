@@ -3,7 +3,6 @@ from asyncio.subprocess import PIPE
 from contextlib import suppress
 from ctypes import CDLL
 from json import JSONDecodeError, dumps, loads
-from math import ceil, sqrt
 from os import killpg
 from pathlib import Path
 from signal import SIGKILL
@@ -14,9 +13,8 @@ from fastmcp.exceptions import ToolError
 from fastmcp.utilities.logging import get_logger
 from pydantic import JsonValue
 
-from config import get_settings
+from config import settings
 
-_settings = get_settings()
 logger = get_logger(__name__)
 
 # Pinned in bin/download.sh.
@@ -32,7 +30,7 @@ _ENVIRONMENT = {
     # The .NET runtime inside OfficeCLI needs ICU unless it runs invariant.
     "DOTNET_SYSTEM_GLOBALIZATION_INVARIANT": "1",
     # A runaway document kills its own run, not the server.
-    "DOTNET_GCHeapHardLimit": f"{_settings.officecli_max_memory * 2**20:#x}",
+    "DOTNET_GCHeapHardLimit": f"{settings.officecli_max_memory * 2**20:#x}",
     "OFFICECLI_NO_AUTO_RESIDENT": "1",
     "OFFICECLI_NO_AUTO_INSTALL": "1",
     "OFFICECLI_SKIP_UPDATE": "1",
@@ -42,7 +40,7 @@ _MAX_SPILL_BYTES = 64 * 2**20
 
 READ_COMMANDS = {"get", "query", "view", "validate", "raw"}
 
-_semaphore = Semaphore(_settings.officecli_max_processes)
+_semaphore = Semaphore(settings.officecli_max_processes)
 
 
 async def _execute(
@@ -53,7 +51,7 @@ async def _execute(
 ) -> tuple[int | None, str, str]:
 
     try:
-        async with timeout(_settings.officecli_queue_timeout):
+        async with timeout(settings.officecli_queue_timeout):
             await _semaphore.acquire()
     except TimeoutError:
         raise ToolError(
@@ -86,7 +84,7 @@ async def _execute(
         )
 
         try:
-            async with timeout(_settings.officecli_timeout):
+            async with timeout(settings.officecli_timeout):
                 stdout, stderr = await process.communicate(stdin)
         except BaseException:
             with suppress(ProcessLookupError):
@@ -97,7 +95,7 @@ async def _execute(
 
     except TimeoutError:
         raise ToolError(
-            f"OfficeCLI timed out after {_settings.officecli_timeout:g} s."
+            f"OfficeCLI timed out after {settings.officecli_timeout:g} s."
         ) from None
 
     finally:
@@ -175,23 +173,8 @@ async def run_batch(
 
 async def screenshot(
     file: Path,
-    page: int | None,
+    *target: str,
 ) -> bytes:
-
-    if page:
-        target = ("--page", str(page))
-    elif file.suffix == ".pptx":
-        # OfficeCLI's own columns cut slides off; as many columns as rows fit.
-        (slides,) = await run_batch(file, [
-            {"command": "query", "selector": "slide"},
-        ])
-        count = len(slides["output"]["results"])
-        target = ("--grid", str(ceil(sqrt(count)) or 1))
-    elif file.suffix == ".docx":
-        target = ("--grid",)
-    else:
-        # OfficeCLI refuses `--page` and `--grid` for a workbook.
-        target = ()
 
     with TemporaryDirectory(prefix="oc-") as temp:
 
@@ -205,10 +188,7 @@ async def screenshot(
 
         if returncode:
             detail = (stderr or stdout).strip().removeprefix("Error: ")
-            raise ToolError(
-                f"Could not render {f'page {page}' if page else 'the overview'}: "
-                f"{detail[-300:]}"
-            )
+            raise ToolError(f"Could not render the preview: {detail[-300:]}")
 
         return await to_thread(image.read_bytes)
 

@@ -1,10 +1,10 @@
 from pathlib import Path
-from xml.etree import ElementTree
+from xml.etree.ElementTree import fromstring
 
 from fastmcp.exceptions import ToolError
 
 from models.office import DocxInventory
-from services.officecli import run_batch
+from services.officecli import run_batch, screenshot
 
 FORMAT = "docx"
 INVENTORY = DocxInventory
@@ -40,7 +40,7 @@ async def prepare(
         {"command": "raw", "part": _DOCUMENT},
     ])
 
-    body = ElementTree.fromstring(document["output"]).find("{*}body")
+    body = fromstring(document["output"]).find("{*}body")
 
     if body is None:
         raise ToolError("The Word document has no body. Use another file.")
@@ -103,3 +103,14 @@ async def inventory(
                 groups.builtin_table_styles.append(properties["id"])
 
     return groups
+
+
+async def preview(
+    file: Path,
+    page: int | None,
+) -> bytes:
+
+    if page:
+        return await screenshot(file, "--page", str(page))
+
+    return await screenshot(file, "--grid")

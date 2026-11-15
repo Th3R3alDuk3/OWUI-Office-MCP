@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from mimetypes import guess_extension
 from pathlib import Path
 from secrets import token_hex
-from shutil import copyfile
 from tempfile import TemporaryDirectory
 from types import ModuleType
 
@@ -31,7 +30,7 @@ _FORMATS: dict[str, ModuleType] = {
     module.FORMAT: module for module in (pptx, docx, xlsx)
 }
 
-_TEMPLATES = Path("templates")
+_TEMPLATE_DIRECTORY = Path("templates")
 
 # A project is the newest file of this name; OpenWebUI cannot replace one.
 _PROJECT_FILE = "project-{project_id}.{format}"
@@ -276,7 +275,7 @@ async def project_lifespan(
             "allows and keeps network access.", LANDLOCK_ABI,
         )
 
-    for source in sorted(_TEMPLATES.iterdir()):
+    for source in sorted(_TEMPLATE_DIRECTORY.iterdir()):
 
         if (module := _FORMATS.get(source.suffix.removeprefix("."))) is None:
             continue
@@ -285,7 +284,7 @@ async def project_lifespan(
             with TemporaryDirectory() as scratch:
                 # OfficeCLI picks its handler by suffix.
                 document = Path(scratch) / f"document.{module.FORMAT}"
-                await to_thread(copyfile, source, document)
+                await to_thread(source.copy, document)
                 await module.prepare(document)
                 templates[source.name] = StoredTemplate(
                     module=module,
